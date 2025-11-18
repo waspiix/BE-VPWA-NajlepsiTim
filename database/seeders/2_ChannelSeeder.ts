@@ -5,19 +5,19 @@ export default class extends BaseSeeder{
     public async run () {
         await Channel.createMany([
             {
-                channelName: 'general',
+                channel_name: 'general',
                 private: false,
             },
             {
-                channelName: 'random',
+                channel_name: 'random',
                 private: false,
             },
             {
-                channelName: 'project-discussion',
+                channel_name: 'project-discussion',
                 private: true,
             },
             {
-                channelName: 'team-chat',
+                channel_name: 'team-chat',
                 private: true,
             },
         ])

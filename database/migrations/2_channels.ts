@@ -6,15 +6,16 @@ export default class extends BaseSchema {
   async up() {
     this.schema.createTable(this.tableName, (table) => {
       table.increments('id').primary()
-      table.string('channelName').unique().notNullable()
+      table.string('channel_name').unique().notNullable()
       table.boolean('private').defaultTo(false).notNullable()
-      table.integer('owner_id').unsigned().notNullable()
+      
+      //table.integer('owner_id').unsigned().notNullable()
 
       table.timestamp('created_at', { useTz: true })
       table.timestamp('updated_at', { useTz: true })
 
       // FKs
-      table.foreign('owner_id').references('id').inTable('users').onDelete('CASCADE')
+      //table.foreign('owner_id').references('id').inTable('users').onDelete('CASCADE')
     })
   }
 

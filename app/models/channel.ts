@@ -5,8 +5,8 @@ export default class Channel extends BaseModel {
   @column({ isPrimary: true })
   declare id: number
 
-  @column()
-  declare channelName: string
+  @column( {columnName: 'channel_name'} )
+  declare channel_name: string
 
   @column()
   declare private: boolean
@@ -16,4 +16,5 @@ export default class Channel extends BaseModel {
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
+
 }

@@ -2,6 +2,7 @@ import { DateTime } from 'luxon'
 import { BaseModel, column } from '@adonisjs/lucid/orm'
 
 export default class UserChannelMapper extends BaseModel {
+  public static table = 'user_channel_mapper'
   @column({ isPrimary: true })
   declare id: number
 
