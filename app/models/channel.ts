@@ -1,23 +1,15 @@
 import { DateTime } from 'luxon'
-import { BaseModel, column, belongsTo } from '@adonisjs/lucid/orm'
-import type { BelongsTo } from '@adonisjs/lucid/types/relations'
-import User from '#models/user'
+import { BaseModel, column } from '@adonisjs/lucid/orm'
 
 export default class Channel extends BaseModel {
   @column({ isPrimary: true })
   declare id: number
 
   @column()
-  declare name: string
+  declare channelName: string
 
   @column()
   declare private: boolean
-
-  @column({ columnName: 'owner_id' })
-  declare ownerId: number
-
-  @belongsTo(() => User)
-  declare owner: BelongsTo<typeof User>
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime

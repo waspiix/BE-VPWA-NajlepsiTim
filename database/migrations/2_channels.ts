@@ -6,7 +6,7 @@ export default class extends BaseSchema {
   async up() {
     this.schema.createTable(this.tableName, (table) => {
       table.increments('id').primary()
-      table.string('name').unique().notNullable()
+      table.string('channelName').unique().notNullable()
       table.boolean('private').defaultTo(false).notNullable()
       table.integer('owner_id').unsigned().notNullable()
 
