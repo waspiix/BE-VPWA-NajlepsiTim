@@ -9,6 +9,7 @@ export default class extends BaseSchema {
       table.integer('user_id').unsigned().notNullable()
       table.integer('channel_id').unsigned().notNullable()
       table.boolean('owner').defaultTo(false).notNullable()
+      table.boolean('ban').defaultTo(false).notNullable()
 
       table.timestamp('joined_at', { useTz: true }).defaultTo(this.now())
       table.timestamp('created_at', { useTz: true })
