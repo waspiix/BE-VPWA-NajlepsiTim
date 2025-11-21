@@ -2,6 +2,14 @@
   "extends": "@adonisjs/tsconfig/tsconfig.app.json",
   "compilerOptions": {
     "rootDir": "./",
-    "outDir": "./build"
+    "outDir": "./build",
+    "baseUrl": ".",
+    "paths": {
+      "#app": ["app"],
+      "#start/*": ["start/*"],
+      "@ioc:Adonis/Core/Route": ["node_modules/@adonisjs/core/build/standalone/Route"],
+      "@ioc:Adonis/Core/HttpContext": ["node_modules/@adonisjs/core/build/standalone/HttpContext"],
+      "@ioc:Adonis/Core/Hash": ["node_modules/@adonisjs/core/build/standalone/Hash"]
+    } 
   }
 }
