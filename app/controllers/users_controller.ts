@@ -5,15 +5,36 @@ import Hash from '@adonisjs/core/services/hash'
 export default class UsersController {
   // Registrácia
   public async register({ request, response }: HttpContext) {
-    const data = request.only(['name', 'surname', 'nick_name', 'email', 'password'])
+    const data = request.only([
+      'firstName',
+      'lastName',
+      'nickName',
+      'email',
+      'password'
+    ])
 
-    const exists = await User.query().where('email', data.email).first()
+    const exists = await User.findBy('email', data.email)
     if (exists) {
       return response.status(400).json({ message: 'Email already in use' })
     }
 
-    const user = await User.create(data)
-    return response.status(201).json({ user })
+    const user = await User.create({
+      name: data.firstName,
+      surname: data.lastName,
+      nick_name: data.nickName,
+      email: data.email,
+      password: data.password
+    })
+
+    // 🔥 automatické prihlásenie po registrácii
+    const token = await User.accessTokens.create(user)
+
+    return response.status(201).json({
+      user,
+      token: token.value!.release(),
+      type: 'bearer',
+      expiresAt: token.expiresAt,
+    })
   }
 
   // Login
@@ -60,6 +81,15 @@ export default class UsersController {
     await user.save()
 
     return response.json(user)
+  }
+
+  public async logout({ auth, response }: HttpContext) {
+    const user = auth.user!
+    const token = user.currentAccessToken!
+    
+    await User.accessTokens.delete(user, token.identifier)
+    
+    return response.json({ message: 'Logged out' })
   }
 
   // Delete

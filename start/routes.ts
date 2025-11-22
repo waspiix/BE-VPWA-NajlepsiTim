@@ -15,6 +15,7 @@ import ChannelsController from '#controllers/channels_controller'
 
 router.post('/register', [UsersController, 'register'])
 router.post('/login', [UsersController, 'login'])
+router.post('/logout', [UsersController, 'logout']).middleware([middleware.auth()])
 
 /**
  * User management routes (protected by auth middleware)
@@ -33,6 +34,7 @@ router.get('/auth/me', async ({ auth }) => {
 }).middleware([middleware.auth()])
 
 router.get('/my-channels', [ChannelsController, 'myChannels']).middleware([middleware.auth()])
+
 
 
 
