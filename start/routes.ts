@@ -35,6 +35,7 @@ router.get('/auth/me', async ({ auth }) => {
 
 router.get('/my-channels', [ChannelsController, 'myChannels']).middleware([middleware.auth()])
 
+router.post('/join', [ChannelsController, 'store']).middleware([middleware.auth()])
 
-
-
+router.post('/quit', [ChannelsController, 'delete']).middleware([middleware.auth()])
+router.post('/leave', [ChannelsController, 'leave']).middleware([middleware.auth()])
