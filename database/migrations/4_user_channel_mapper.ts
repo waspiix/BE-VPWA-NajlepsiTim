@@ -9,13 +9,12 @@ export default class extends BaseSchema {
       table.integer('user_id').unsigned().notNullable()
       table.integer('channel_id').unsigned().notNullable()
       table.boolean('owner').defaultTo(false).notNullable()
-      table.boolean('ban').defaultTo(false).notNullable()
+      table.integer('kick_count').defaultTo(0).notNullable()
 
       table.timestamp('joined_at', { useTz: true }).defaultTo(this.now())
       table.timestamp('created_at', { useTz: true })
       table.timestamp('updated_at', { useTz: true })
 
-      // FKs
       table.foreign('user_id').references('id').inTable('users').onDelete('CASCADE')
       table.foreign('channel_id').references('id').inTable('channels').onDelete('CASCADE')
 
