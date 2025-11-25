@@ -64,3 +64,13 @@ router
   })
   .prefix('/api')
   .middleware([middleware.auth()])
+
+// WEBSOCKET ROUTES
+router
+  .group(() => {
+    router.post('/ws/subscribe', '#controllers/websocket_controller.subscribe') // Subscribe to channel
+    router.post('/ws/message', '#controllers/websocket_controller.sendMessage') // Send message
+    router.post('/ws/typing', '#controllers/websocket_controller.typing') // Typing indicator
+  })
+  .prefix('/api')
+  .middleware([middleware.auth()])
