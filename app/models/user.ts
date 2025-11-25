@@ -23,7 +23,7 @@ export default class User extends compose(BaseModel, AuthFinder) {
   declare surname: string | null
 
   @column({ columnName: 'nick_name' })
-  declare nick_name: string
+  declare nickName: string
 
   @column()
   declare email: string
@@ -39,6 +39,9 @@ export default class User extends compose(BaseModel, AuthFinder) {
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
+
+  @column({ columnName: 'notification_mode' })
+  declare notificationMode: string
 
   @manyToMany(() => Channel, {
     pivotTable: 'user_channel_mapper',
