@@ -1,3 +1,8 @@
 import transmit from '@adonisjs/transmit/services/main'
 
-transmit.registerRoutes()
+/**
+ * Setup transmit listeners here
+ */
+transmit.on('connection', (socket) => {
+  console.log('Client connected:', socket.id)
+})

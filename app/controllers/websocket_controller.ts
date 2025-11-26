@@ -3,9 +3,6 @@ import WebSocketService from '#services/websocket_service'
 import CommandsService from '#services/commands_service'
 
 export default class WebSocketController {
-  /**
-   * POST /ws/subscribe - Subscribe to channel
-   */
   async subscribe({ auth, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
     const { channelId } = request.only(['channelId'])
@@ -18,9 +15,6 @@ export default class WebSocketController {
     }
   }
 
-  /**
-   * POST /ws/message - Send message
-   */
   async sendMessage({ auth, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
     const { channelId, content } = request.only(['channelId', 'content'])
@@ -37,9 +31,6 @@ export default class WebSocketController {
     }
   }
 
-  /**
-   * POST /ws/typing - Typing indicator
-   */
   async typing({ auth, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
     const { channelId, isTyping } = request.only(['channelId', 'isTyping'])
@@ -49,9 +40,6 @@ export default class WebSocketController {
     return response.ok({ message: 'Typing status broadcasted' })
   }
 
-  /**
-   * POST /ws/command - Execute command
-   */
   async command({ auth, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
     const { channelId, content } = request.only(['channelId', 'content'])
@@ -60,7 +48,6 @@ export default class WebSocketController {
       return response.badRequest({ message: 'Content is required' })
     }
 
-    // Parsuj command
     const parsed = CommandsService.parseCommand(content)
 
     if (!parsed) {
@@ -74,23 +61,14 @@ export default class WebSocketController {
 
       switch (command) {
         case 'invite':
-          if (args.length === 0) {
-            return response.badRequest({ message: 'Usage: /invite <nickName>' })
-          }
           result = await CommandsService.invite(channelId, user.id, args[0])
           break
 
         case 'revoke':
-          if (args.length === 0) {
-            return response.badRequest({ message: 'Usage: /revoke <nickName>' })
-          }
           result = await CommandsService.revoke(channelId, user.id, args[0])
           break
 
         case 'kick':
-          if (args.length === 0) {
-            return response.badRequest({ message: 'Usage: /kick <nickName>' })
-          }
           result = await CommandsService.kick(channelId, user.id, args[0])
           break
 
@@ -104,9 +82,9 @@ export default class WebSocketController {
           break
 
         default:
-          return response.badRequest({ 
+          return response.badRequest({
             message: `Unknown command: /${command}`,
-            availableCommands: ['/invite', '/revoke', '/kick', '/list', '/quit', '/cancel']
+            availableCommands: ['/invite', '/revoke', '/kick', '/list', '/quit', '/cancel'],
           })
       }
 
