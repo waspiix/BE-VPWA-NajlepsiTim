@@ -51,7 +51,9 @@ export default class WebSocketController {
     const parsed = CommandsService.parseCommand(content)
 
     if (!parsed) {
-      return response.badRequest({ message: 'Invalid command format. Commands start with /' })
+      return response.badRequest({
+        message: 'Invalid command format. Commands start with /',
+      })
     }
 
     const { command, args } = parsed
@@ -60,6 +62,20 @@ export default class WebSocketController {
       let result
 
       switch (command) {
+        case 'join': {
+          const channelName = args[0]
+          const isPrivate = args[1] === 'private'
+
+          if (!channelName) {
+            return response.badRequest({
+              message: 'Usage: /join channelName [private]',
+            })
+          }
+
+          result = await CommandsService.join(user.id, channelName, isPrivate)
+          break
+        }
+
         case 'invite':
           result = await CommandsService.invite(channelId, user.id, args[0])
           break
@@ -84,12 +100,12 @@ export default class WebSocketController {
         default:
           return response.badRequest({
             message: `Unknown command: /${command}`,
-            availableCommands: ['/invite', '/revoke', '/kick', '/list', '/quit', '/cancel'],
+            availableCommands: ['/join', '/invite', '/revoke', '/kick', '/list', '/quit', '/cancel'],
           })
       }
 
       return response.ok(result)
-    } catch (error) {
+    } catch (error: any) {
       return response.forbidden({ message: error.message })
     }
   }
