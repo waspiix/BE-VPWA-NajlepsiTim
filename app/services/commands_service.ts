@@ -127,19 +127,55 @@ export default class CommandsService {
       throw new Error('Only owner can invite')
     }
 
+    // Nájdi používateľa podľa nickname
     const user = await db.from('users').where('nick_name', nickname).first()
     if (!user) throw new Error('User not found')
 
-    await db.table('user_channel_mapper').insert({
-      user_id: user.id,
-      channel_id: channelId,
-      owner: false,
-      kick_count: 0,
-      joined_at: new Date(),
-      created_at: new Date(),
-      updated_at: new Date(),
-    })
+    // Skontroluj existujúce členstvo
+    const membership = await db
+      .from('user_channel_mapper')
+      .where('user_id', user.id)
+      .where('channel_id', channelId)
+      .first()
 
+    if (membership) {
+      if (membership.kick_count >= 3) {
+        // Resetuj ban a "znovu pridaj"
+        await db
+          .from('user_channel_mapper')
+          .where('user_id', user.id)
+          .where('channel_id', channelId)
+          .update({
+            kick_count: 0,
+            owner: false,
+            joined_at: new Date(),
+            updated_at: new Date(),
+          })
+
+        // Zmaž všetky predchádzajúce kicky pre tohto používateľa v tomto kanáli
+        await db
+          .from('channel_kicks')
+          .where('channel_id', channelId)
+          .where('kicked_user_id', user.id)
+          .delete()
+      } else {
+        // Už je člen, nič netreba robiť
+        throw new Error('User is already a member of this channel')
+      }
+    } else {
+      // Pridaj nového člena
+      await db.table('user_channel_mapper').insert({
+        user_id: user.id,
+        channel_id: channelId,
+        owner: false,
+        kick_count: 0,
+        joined_at: new Date(),
+        created_at: new Date(),
+        updated_at: new Date(),
+      })
+    }
+
+    // Emituj notifikáciu cez socket
     getIo().to(`channel:${channelId}`).emit('system', {
       type: 'invite',
       nickname,
@@ -147,6 +183,8 @@ export default class CommandsService {
 
     return { message: `User ${nickname} invited` }
   }
+
+
 
   static async revoke(channelId: number, ownerId: number, nickname: string) {
     const channel = await Channel.findOrFail(channelId)
@@ -172,30 +210,72 @@ export default class CommandsService {
     return { message: `User ${nickname} revoked` }
   }
 
-  static async kick(channelId: number, ownerId: number, nickname: string) {
+  static async kick(channelId: number, kickerId: number, nickname: string) {
     const channel = await Channel.findOrFail(channelId)
-
-    if (channel.ownerId !== ownerId) {
-      throw new Error('Only owner can kick')
-    }
 
     const user = await db.from('users').where('nick_name', nickname).first()
     if (!user) throw new Error('User not found')
 
-    await db
+    const membership = await db
       .from('user_channel_mapper')
-      .where({ user_id: user.id, channel_id: channelId })
-      .update({
-        kick_count: 3,
-      })
+      .where({ channel_id: channelId, user_id: user.id })
+      .first()
+
+    if (!membership) throw new Error('User is not a member of this channel')
+
+    if (channel.private) {
+      // Private: iba owner môže kicknúť kohokoľvek
+      if (channel.ownerId !== kickerId) {
+        throw new Error('Only owner can kick in private channels')
+      }
+
+      await db
+        .from('user_channel_mapper')
+        .where({ channel_id: channelId, user_id: user.id })
+        .update({ kick_count: 3 })
+
+    } else {
+      // Public: kicknúť môže ktokoľvek, ale **nie ownera**
+      if (membership.owner) {
+        throw new Error('Cannot kick the owner in a public channel')
+      }
+
+      // Zvýšiť kick_count o 1
+      await db
+        .from('user_channel_mapper')
+        .where({ channel_id: channelId, user_id: user.id })
+        .increment('kick_count', 1)
+    }
+
+    // Záznam do channel_kicks tabuľky – len ak ešte kicker pre tohto usera v tomto kanáli nekickol
+    try {
+      await db
+        .table('channel_kicks')
+        .insert({
+          channel_id: channelId,
+          kicked_user_id: user.id,
+          kicker_user_id: kickerId,
+          created_at: new Date(),
+        })
+    } catch (err: any) {
+      // Ak duplicate key error, vyhodíme špecifickú chybu
+      if (err.code === '23505') { // PostgreSQL unique violation
+        throw new Error(`You have already kicked user ${nickname} in this channel`)
+      }
+      throw err
+    }
 
     getIo().to(`channel:${channelId}`).emit('system', {
       type: 'kick',
       nickname,
     })
 
-    return { message: `User ${nickname} kicked` }
+    return {
+      message: `User ${nickname} kicked successfully`,
+      currentKickCount: membership.kick_count + (channel.private ? 3 : 1),
+    }
   }
+
 
   static async list(channelId: number, userId: number) {
     const members = await db

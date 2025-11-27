@@ -116,6 +116,7 @@ export default class ChannelsController {
       .from('channels')
       .join('user_channel_mapper', 'channels.id', 'user_channel_mapper.channel_id')
       .where('user_channel_mapper.user_id', user.id)
+      .where('user_channel_mapper.kick_count', '<', 3) // <-- filter banned
       .select(
         'channels.id',
         'channels.name',
@@ -128,6 +129,32 @@ export default class ChannelsController {
 
     return response.ok(channels)
   }
+
+public async listMembers({ params, response }: HttpContext) {
+  const channelId = params.id
+
+  // Skontrolujeme či kanál existuje
+  const channel = await Channel.find(channelId)
+  if (!channel) {
+    return response.status(404).json({ message: 'Channel not found' })
+  }
+
+  // JOIN users + user_channel_mapper
+  const members = await db
+    .from('user_channel_mapper')
+    .join('users', 'users.id', 'user_channel_mapper.user_id')
+    .where('user_channel_mapper.channel_id', channelId)
+    .select(
+      'users.id',
+      'users.nick_name as nickName',
+      'user_channel_mapper.owner as isOwner',
+      'user_channel_mapper.ban as isBanned',
+      'user_channel_mapper.joined_at as joinedAt'
+    )
+    .orderBy('users.nick_name', 'asc')
+
+  return response.ok({ members })
+}
 
   // GET /api/channels/public - Verejne kanaly
   public async public({ response }: HttpContext) {
