@@ -35,7 +35,7 @@ export default class WebSocketController {
     const user = auth.getUserOrFail()
     const { channelId, isTyping } = request.only(['channelId', 'isTyping'])
 
-    WebSocketService.broadcastTyping(channelId, user.id, isTyping)
+    await WebSocketService.broadcastTyping(channelId, user.id, isTyping)
 
     return response.ok({ message: 'Typing status broadcasted' })
   }

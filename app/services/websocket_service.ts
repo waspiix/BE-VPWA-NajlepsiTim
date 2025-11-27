@@ -53,7 +53,7 @@ export default class WebSocketService {
     }
 
     // 3) zapíš správu do DB
-    const [row] = await db
+    const [inserted] = await db
       .table('messages')
       .insert({
         channel_id: channelId,
@@ -63,27 +63,46 @@ export default class WebSocketService {
         created_at: new Date(),
         updated_at: new Date(),
       })
-      .returning([
-        'id',
-        'channel_id as channelId',
-        'user_id as userId',
-        'content',
-        'mentioned_user_id as mentionedUserId',
-        'created_at as createdAt',
-      ])
+      .returning(['id'])
 
-    // 4) pošli realtime event do kanála
-    io.to(channelName).emit('message', row)
+    // 4) načítaj ju s nickmi ako v MessagesController.index
+    const [fullMessage] = await db
+      .from('messages')
+      .where('messages.id', inserted.id)
+      .leftJoin('users as author', 'messages.user_id', 'author.id')
+      .leftJoin('users as mentioned', 'messages.mentioned_user_id', 'mentioned.id')
+      .select(
+        'messages.id',
+        'messages.content',
+        'messages.created_at as createdAt',
+        'messages.user_id as userId',
+        'messages.mentioned_user_id as mentionedUserId',
+        'author.nick_name as authorNickName',
+        'mentioned.nick_name as mentionedUserNickName',
+        'messages.channel_id as channelId'
+      )
 
-    return row
+    // 5) realtime broadcast – globálne (všetkým socketom)
+    io.emit('message', fullMessage)
+    // (ak by si neskôr robil rooms, môžeš nechať aj:)
+    // io.to(channelName).emit('message', fullMessage)
+
+    return fullMessage
   }
 
-  static broadcastTyping(channelId: number, userId: number, isTyping: boolean) {
+  static async broadcastTyping(channelId: number, userId: number, isTyping: boolean) {
     const io = getIo()
-    const channelName = `channel:${channelId}`
 
-    io.to(channelName).emit('typing', {
+    const user = await db
+      .from('users')
+      .select('nick_name')
+      .where('id', userId)
+      .first()
+
+    io.emit('typing', {
+      channelId,
       userId,
+      nickName: user?.nick_name,
       isTyping,
     })
   }
