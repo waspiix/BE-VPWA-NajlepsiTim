@@ -20,7 +20,7 @@ export default class CommandsService {
       throw new Error('Only owner can invite')
     }
 
-    const user = await db.from('users').where('nickname', nickname).first()
+    const user = await db.from('users').where('nick_name', nickname).first()
     if (!user) throw new Error('User not found')
 
     await db.table('user_channel_mapper').insert({
@@ -48,7 +48,7 @@ export default class CommandsService {
       throw new Error('Only owner can revoke access')
     }
 
-    const user = await db.from('users').where('nickname', nickname).first()
+    const user = await db.from('users').where('nick_name', nickname).first()
     if (!user) throw new Error('User not found')
 
     await db
@@ -72,7 +72,7 @@ export default class CommandsService {
       throw new Error('Only owner can kick')
     }
 
-    const user = await db.from('users').where('nickname', nickname).first()
+    const user = await db.from('users').where('nick_name', nickname).first()
     if (!user) throw new Error('User not found')
 
     await db
@@ -94,7 +94,7 @@ export default class CommandsService {
     const members = await db
       .from('user_channel_mapper')
       .join('users', 'users.id', 'user_channel_mapper.user_id')
-      .select('users.nickname', 'user_channel_mapper.owner', 'user_channel_mapper.kick_count')
+      .select('users.nick_name', 'user_channel_mapper.owner', 'user_channel_mapper.kick_count')
       .where('channel_id', channelId)
 
     return { members }

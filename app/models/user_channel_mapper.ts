@@ -3,6 +3,7 @@ import { BaseModel, column } from '@adonisjs/lucid/orm'
 
 export default class UserChannelMapper extends BaseModel {
   public static table = 'user_channel_mapper'
+
   @column({ isPrimary: true })
   declare id: number
 
@@ -15,6 +16,9 @@ export default class UserChannelMapper extends BaseModel {
   @column()
   declare owner: boolean
 
+  @column({ columnName: 'kick_count' })
+  declare kickCount: number
+
   @column.dateTime({ columnName: 'joined_at' })
   declare joinedAt: DateTime
 
@@ -23,7 +27,4 @@ export default class UserChannelMapper extends BaseModel {
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
-
-  @column()
-  declare ban: boolean
 }

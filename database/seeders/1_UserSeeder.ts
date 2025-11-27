@@ -4,45 +4,47 @@ import Hash from '@adonisjs/core/services/hash'
 
 export default class extends BaseSeeder {
   public async run() {
+    const password = await Hash.make('password123')
+
     await User.createMany([
       {
         name: 'John',
         surname: 'Doe',
-        nick_name: 'johnd',
+        nickName: 'johnd',
         email: 'john@example.com',
-        password: 'password123',
+        password,
         state: 1,
       },
       {
-        name: 'Sarah',
-        surname: 'Connor',
-        nick_name: 'sconnor',
-        email: 'sarah@example.com',
-        password: 'password123',
+        name: 'Jane',
+        surname: 'Smith',
+        nickName: 'janes',
+        email: 'jane@example.com',
+        password,
+        state: 1,
+      },
+      {
+        name: 'Bob',
+        surname: 'Marley',
+        nickName: 'bobm',
+        email: 'bob@example.com',
+        password,
         state: 2,
       },
       {
-        name: 'Mike',
-        surname: 'Smith',
-        nick_name: 'msmith',
-        email: 'mike@example.com',
-        password: 'password123',
-        state: 1,
-      },
-      {
-        name: 'Anna',
-        surname: 'Brown',
-        nick_name: 'abrown',
-        email: 'anna@example.com',
-        password: 'password123',
+        name: 'Alice',
+        surname: 'Wonderland',
+        nickName: 'alicew',
+        email: 'alice@example.com',
+        password,
         state: 3,
       },
       {
         name: 'Peter',
         surname: 'Parker',
-        nick_name: 'spidey',
+        nickName: 'spidey',
         email: 'peter@example.com',
-        password: 'password123',
+        password,
         state: 1,
       },
     ])

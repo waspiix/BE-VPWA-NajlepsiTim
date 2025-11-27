@@ -15,7 +15,7 @@ export default class UserChannelMapperSeeder extends BaseSeeder {
           channelId,
           owner: userId === 1,
           joinedAt: now,
-          ban: false,
+          kickCount: 0,
         })
       }
     }

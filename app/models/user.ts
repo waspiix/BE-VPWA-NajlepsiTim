@@ -45,7 +45,7 @@ export default class User extends compose(BaseModel, AuthFinder) {
 
   @manyToMany(() => Channel, {
     pivotTable: 'user_channel_mapper',
-    pivotColumns: ['owner', 'ban', 'joined_at'],
+    pivotColumns: ['owner', 'kick_count', 'joined_at'],
   })
   declare channels: ManyToMany<typeof Channel>
 
