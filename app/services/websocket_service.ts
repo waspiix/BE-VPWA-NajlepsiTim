@@ -13,7 +13,7 @@ export default class WebSocketService {
       throw new Error('You are not a member of this channel')
     }
 
-    const channel = await Channel.findOrFail(channelId)
+    await Channel.findOrFail(channelId)
     const channelName = `channel:${channelId}`
 
     const io = getIo()
@@ -23,19 +23,59 @@ export default class WebSocketService {
   }
 
   static async sendMessage(channelId: number, userId: number, content: string) {
+    // 1) over, že user je člen kanála
+    const membership = await db
+      .from('user_channel_mapper')
+      .where({ user_id: userId, channel_id: channelId })
+      .first()
+
+    if (!membership) {
+      throw new Error('You are not a member of this channel')
+    }
+
     const io = getIo()
     const channelName = `channel:${channelId}`
 
-    const message = {
-      userId,
-      content,
-      channelId,
-      createdAt: new Date(),
+    // 2) nájdi prípadný @mention
+    let mentionedUserId: number | null = null
+    const mentionMatch = content.match(/@(\w+)/)
+    if (mentionMatch) {
+      const nick = mentionMatch[1]
+      const mentionedUser = await db
+        .from('users')
+        .select('id')
+        .where('nick_name', nick)
+        .first()
+
+      if (mentionedUser) {
+        mentionedUserId = mentionedUser.id
+      }
     }
 
-    io.to(channelName).emit('message', message)
+    // 3) zapíš správu do DB
+    const [row] = await db
+      .table('messages')
+      .insert({
+        channel_id: channelId,
+        user_id: userId,
+        content,
+        mentioned_user_id: mentionedUserId,
+        created_at: new Date(),
+        updated_at: new Date(),
+      })
+      .returning([
+        'id',
+        'channel_id as channelId',
+        'user_id as userId',
+        'content',
+        'mentioned_user_id as mentionedUserId',
+        'created_at as createdAt',
+      ])
 
-    return message
+    // 4) pošli realtime event do kanála
+    io.to(channelName).emit('message', row)
+
+    return row
   }
 
   static broadcastTyping(channelId: number, userId: number, isTyping: boolean) {
