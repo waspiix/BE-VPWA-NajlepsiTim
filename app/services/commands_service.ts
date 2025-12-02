@@ -1,6 +1,7 @@
 import db from '@adonisjs/lucid/services/db'
 import Channel from '#models/channel'
 import { getIo } from '#start/socket'
+import { Exception } from '@adonisjs/core/exceptions'
 
 export default class CommandsService {
   static parseCommand(content: string) {
@@ -288,11 +289,45 @@ export default class CommandsService {
   }
 
   static async quit(channelId: number, userId: number) {
+    const channel = await Channel.findOrFail(channelId)
+
+    if (channel.ownerId !== userId) {
+      throw new Exception('You are not the owner, cannot delete the channel', {status: 403})
+    }
+
+    // Ak je owner → zmaže celý kanál
+    if (channel.ownerId === userId) {
+      await channel.delete()
+      return { message: 'Channel deleted by owner' }
+    }
+    // Ak user nie je owner → iba odíde z kanála
     await db
       .from('user_channel_mapper')
       .where({ user_id: userId, channel_id: channelId })
       .delete()
 
     return { message: 'You left the channel' }
+  
   }
+
+  static async cancel(channelId: number, userId: number) {
+    // Najdi channel
+    const channel = await Channel.findOrFail(channelId)
+
+    // Ak je owner → zmaž celý channel
+    if (channel.ownerId === userId) {
+      await channel.delete()
+
+      return { message: 'Channel has been deleted because the owner canceled membership' }
+    }
+
+    // Ak nie je owner → odstráň iba jeho členstvo
+    await db
+      .from('user_channel_mapper')
+      .where({ user_id: userId, channel_id: channelId })
+      .delete()
+
+    return { message: 'You canceled your membership in the channel' }
+  }
+
 }

@@ -93,8 +93,11 @@ export default class WebSocketController {
           break
 
         case 'quit':
-        case 'cancel':
           result = await CommandsService.quit(channelId, user.id)
+          break
+
+        case 'cancel':
+          result = await CommandsService.cancel(channelId, user.id)
           break
 
         default:
