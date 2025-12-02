@@ -52,12 +52,14 @@ export default class CommandsService {
         updated_at: new Date(),
       })
 
+      // Broadcast všetkým o vytvorení kanála
       getIo().emit('system', {
         type: 'channel_created',
         channelId: channel.id,
         name: channel.name,
         private: channel.private,
         ownerNickName: user.nick_name,
+        ownerId: userId, // pridaj aj ownerId
       })
 
       return {
@@ -109,7 +111,22 @@ export default class CommandsService {
       updated_at: new Date(),
     })
 
-    getIo().emit('system', {
+    // ✅ NOVÉ: Pošli userovi notifikáciu, že joinol kanál
+    // Toto aktualizuje jeho channel list
+    const io = getIo()
+    
+    // Broadcast VŠETKÝM o joininute (vrátane teba)
+    io.emit('system', {
+      type: 'channel_joined',
+      userId: userId, // pre filtrovanie na frontende
+      channelId: channel.id,
+      name: channel.name,
+      private: channel.private,
+      isOwner: false,
+    })
+    
+    // Broadcast ostatným v kanáli systémovú správu
+    io.to(`channel:${channel.id}`).emit('system', {
       type: 'join',
       channelId: channel.id,
       nickName: user.nick_name,
@@ -279,44 +296,96 @@ export default class CommandsService {
 
 
   static async list(channelId: number, userId: number) {
+    // skontroluj či user je člen
+    const membership = await db
+      .from('user_channel_mapper')
+      .where({ user_id: userId, channel_id: channelId })
+      .first()
+
+    if (!membership) {
+      throw new Error('You are not a member of this channel')
+    }
+
     const members = await db
       .from('user_channel_mapper')
       .join('users', 'user_channel_mapper.user_id', 'users.id')
-      .select('users.nick_name', 'user_channel_mapper.owner', 'user_channel_mapper.kick_count')
+      .select(
+        'users.id',
+        'users.nick_name as name',
+        'user_channel_mapper.owner',
+        'user_channel_mapper.kick_count'
+      )
       .where('channel_id', channelId)
 
     return { members }
   }
 
+
   static async quit(channelId: number, userId: number) {
     const channel = await Channel.findOrFail(channelId)
 
     if (channel.ownerId !== userId) {
-      throw new Exception('You are not the owner, cannot delete the channel', {status: 403})
+      throw new Exception('You are not the owner, cannot delete the channel', { status: 403 })
     }
 
-    // Ak je owner → zmaže celý kanál
-    if (channel.ownerId === userId) {
-      await channel.delete()
-      return { message: 'Channel deleted by owner' }
+    // user kvôli nickname
+    const user = await db.from('users').where('id', userId).first()
+    if (!user) {
+      throw new Error('User not found')
     }
-    // Ak user nie je owner → iba odíde z kanála
-    await db
-      .from('user_channel_mapper')
-      .where({ user_id: userId, channel_id: channelId })
-      .delete()
 
-    return { message: 'You left the channel' }
-  
+    const io = getIo()
+
+    // Owner zmazal kanál
+    await channel.delete()
+
+    // Broadcast VŠETKÝM, že kanál bol zmazaný ownerom
+    io.emit('system', {
+      type: 'channel_deleted',
+      channelId: channel.id,
+      channelName: channel.name,
+      reason: 'owner_quit',
+      ownerNickName: user.nick_name,
+    })
+
+    // Notifikuj všetkých v channel roome pred zatvorením
+    io.to(`channel:${channelId}`).emit('system', {
+      type: 'channel_closed',
+      channelId: channelId,
+      message: `Channel ${channel.name} was deleted by owner`,
+    })
+
+    return { message: 'Channel deleted by owner' }
   }
 
   static async cancel(channelId: number, userId: number) {
-    // Najdi channel
     const channel = await Channel.findOrFail(channelId)
+    
+    const user = await db.from('users').where('id', userId).first()
+    if (!user) {
+      throw new Error('User not found')
+    }
+
+    const io = getIo()
 
     // Ak je owner → zmaž celý channel
     if (channel.ownerId === userId) {
       await channel.delete()
+
+      // Broadcast VŠETKÝM, že kanál bol zmazaný
+      io.emit('system', {
+        type: 'channel_deleted',
+        channelId: channel.id,
+        channelName: channel.name,
+        reason: 'owner_canceled',
+        ownerNickName: user.nick_name,
+      })
+
+      io.to(`channel:${channelId}`).emit('system', {
+        type: 'channel_closed',
+        channelId: channelId,
+        message: `Channel ${channel.name} was deleted by owner`,
+      })
 
       return { message: 'Channel has been deleted because the owner canceled membership' }
     }
@@ -327,7 +396,22 @@ export default class CommandsService {
       .where({ user_id: userId, channel_id: channelId })
       .delete()
 
+    // ✅ FALLBACK: Broadcast všetkým (každý si skontroluje userId na frontende)
+    io.emit('system', {
+      type: 'user_left_channel',
+      userId: userId, // ✅ DÔLEŽITÉ pre filtrovanie
+      channelId: channelId,
+      channelName: channel.name,
+    })
+
+    // Notifikuj OSTATNÝCH v kanáli
+    io.to(`channel:${channelId}`).emit('system', {
+      type: 'user_left',
+      channelId: channelId,
+      nickName: user.nick_name,
+      userId: userId,
+    })
+
     return { message: 'You canceled your membership in the channel' }
   }
-
 }

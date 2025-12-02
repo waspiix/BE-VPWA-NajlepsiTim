@@ -89,9 +89,24 @@ export default class WebSocketController {
           result = await CommandsService.kick(channelId, user.id, args[0])
           break
 
-        case 'list':
+        case 'list': {
+          const channelId = socket.data.channelId
+
+          if (!channelId) {
+            return response.badRequest({
+              message: "You are not inside any channel"
+            })
+          }
+
           result = await CommandsService.list(channelId, user.id)
+
+          //getIo()
+          //  .to(socket.id)
+          //  .emit('open_members_page', { members: result.members })
+
           break
+        }
+
 
         case 'quit':
           result = await CommandsService.quit(channelId, user.id)
