@@ -64,7 +64,8 @@ export default class WebSocketController {
       switch (command) {
         case 'join': {
           const channelName = args[0]
-          const isPrivate = args[1] === 'private'
+          const rawFlag = args[1]?.replace(/\[|\]/g, '').toLowerCase()
+          const isPrivate = rawFlag === 'private'
 
           if (!channelName) {
             return response.badRequest({
