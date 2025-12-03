@@ -64,7 +64,8 @@ export default class WebSocketController {
       switch (command) {
         case 'join': {
           const channelName = args[0]
-          const isPrivate = args[1] === 'private'
+          const rawFlag = args[1]?.replace(/\[|\]/g, '').toLowerCase()
+          const isPrivate = rawFlag === 'private'
 
           if (!channelName) {
             return response.badRequest({
@@ -88,13 +89,31 @@ export default class WebSocketController {
           result = await CommandsService.kick(channelId, user.id, args[0])
           break
 
-        case 'list':
+        case 'list': {
+          const channelId = socket.data.channelId
+
+          if (!channelId) {
+            return response.badRequest({
+              message: "You are not inside any channel"
+            })
+          }
+
           result = await CommandsService.list(channelId, user.id)
+
+          //getIo()
+          //  .to(socket.id)
+          //  .emit('open_members_page', { members: result.members })
+
           break
+        }
+
 
         case 'quit':
-        case 'cancel':
           result = await CommandsService.quit(channelId, user.id)
+          break
+
+        case 'cancel':
+          result = await CommandsService.cancel(channelId, user.id)
           break
 
         default:

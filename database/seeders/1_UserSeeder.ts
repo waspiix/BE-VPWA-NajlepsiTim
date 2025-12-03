@@ -1,18 +1,16 @@
 import User from '#models/user'
 import { BaseSeeder } from '@adonisjs/lucid/seeders'
-import Hash from '@adonisjs/core/services/hash'
 
 export default class extends BaseSeeder {
   public async run() {
-    const password = await Hash.make('password123')
-
+    
     await User.createMany([
       {
         name: 'John',
         surname: 'Doe',
         nickName: 'johnd',
         email: 'john@example.com',
-        password,
+        password: 'password123',
         state: 1,
       },
       {
@@ -20,7 +18,7 @@ export default class extends BaseSeeder {
         surname: 'Smith',
         nickName: 'janes',
         email: 'jane@example.com',
-        password,
+        password: 'password123',
         state: 1,
       },
       {
@@ -28,7 +26,7 @@ export default class extends BaseSeeder {
         surname: 'Marley',
         nickName: 'bobm',
         email: 'bob@example.com',
-        password,
+        password: 'password123',
         state: 2,
       },
       {
@@ -36,7 +34,7 @@ export default class extends BaseSeeder {
         surname: 'Wonderland',
         nickName: 'alicew',
         email: 'alice@example.com',
-        password,
+        password: 'password123',
         state: 3,
       },
       {
@@ -44,7 +42,7 @@ export default class extends BaseSeeder {
         surname: 'Parker',
         nickName: 'spidey',
         email: 'peter@example.com',
-        password,
+        password: 'password123',
         state: 1,
       },
     ])
