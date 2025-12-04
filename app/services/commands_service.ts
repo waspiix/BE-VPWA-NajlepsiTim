@@ -296,7 +296,7 @@ export default class CommandsService {
 
 
   static async list(channelId: number, userId: number) {
-    // skontroluj či user je člen
+    // Check membership
     const membership = await db
       .from('user_channel_mapper')
       .where({ user_id: userId, channel_id: channelId })
@@ -306,12 +306,13 @@ export default class CommandsService {
       throw new Error('You are not a member of this channel')
     }
 
+    // Fetch members
     const members = await db
       .from('user_channel_mapper')
       .join('users', 'user_channel_mapper.user_id', 'users.id')
       .select(
         'users.id',
-        'users.nick_name as name',
+        'users.nick_name',   // ⬅️ vraciame nick_name
         'user_channel_mapper.owner',
         'user_channel_mapper.kick_count'
       )
@@ -319,6 +320,7 @@ export default class CommandsService {
 
     return { members }
   }
+
 
 
   static async quit(channelId: number, userId: number) {
