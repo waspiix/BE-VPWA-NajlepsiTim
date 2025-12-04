@@ -170,7 +170,6 @@ export default class CommandsService {
             updated_at: new Date(),
           })
 
-        // Zmaž všetky predchádzajúce kicky pre tohto používateľa v tomto kanáli
         await db
           .from('channel_kicks')
           .where('channel_id', channelId)
@@ -193,10 +192,23 @@ export default class CommandsService {
       })
     }
 
-    // Emituj notifikáciu cez socket
-    getIo().to(`channel:${channelId}`).emit('system', {
+    const io = getIo()
+
+    // 🔔 Notifikácia pre ľudí v kanáli (vizuálna, info)
+    io.to(`channel:${channelId}`).emit('system', {
       type: 'invite',
       nickname,
+    })
+
+    // 🔥 REAKTIVITA: povedz invited userovi, že "joinol" kanál
+    // Toto spracuje case 'channel_joined' v socket boot a pridá kanál do sidebaru
+    io.emit('system', {
+      type: 'channel_joined',
+      userId: user.id,
+      channelId: channelId,
+      name: channel.name,
+      private: channel.private,
+      isOwner: false,
     })
 
     return { message: `User ${nickname} invited` }

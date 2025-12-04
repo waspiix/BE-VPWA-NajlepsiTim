@@ -4,19 +4,19 @@ import CommandsService from '#services/commands_service'
 
 export default class WebSocketController {
   async subscribe({ auth, request, response }: HttpContext) {
-    const user = auth.getUserOrFail()
+    const user = await auth.getUserOrFail()
     const { channelId } = request.only(['channelId'])
 
     try {
       const channelName = await WebSocketService.subscribeToChannel(channelId, user.id)
       return response.ok({ channelName })
-    } catch (error) {
-      return response.forbidden({ message: error.message })
+    } catch (error: any) {
+      return response.forbidden({ message: error.message || 'Cannot subscribe to channel' })
     }
   }
 
   async sendMessage({ auth, request, response }: HttpContext) {
-    const user = auth.getUserOrFail()
+    const user = await auth.getUserOrFail()
     const { channelId, content } = request.only(['channelId', 'content'])
 
     if (!content || content.trim().length === 0) {
@@ -26,13 +26,13 @@ export default class WebSocketController {
     try {
       const message = await WebSocketService.sendMessage(channelId, user.id, content)
       return response.ok(message)
-    } catch (error) {
-      return response.forbidden({ message: error.message })
+    } catch (error: any) {
+      return response.forbidden({ message: error.message || 'Cannot send message' })
     }
   }
 
   async typing({ auth, request, response }: HttpContext) {
-    const user = auth.getUserOrFail()
+    const user = await auth.getUserOrFail()
     const { channelId, isTyping } = request.only(['channelId', 'isTyping'])
 
     await WebSocketService.broadcastTyping(channelId, user.id, isTyping)
@@ -41,7 +41,7 @@ export default class WebSocketController {
   }
 
   async command({ auth, request, response }: HttpContext) {
-    const user = auth.getUserOrFail()
+    const user = await auth.getUserOrFail()
     const { channelId, content } = request.only(['channelId', 'content'])
 
     if (!content || content.trim().length === 0) {
@@ -57,6 +57,15 @@ export default class WebSocketController {
     }
 
     const { command, args } = parsed
+
+    // helper: príkazy, ktoré potrebujú validný channelId
+    const ensureChannelId = () => {
+      const id = Number(channelId)
+      if (!id || Number.isNaN(id)) {
+        throw new Error(`ChannelId is required for /${command} command`)
+      }
+      return id
+    }
 
     try {
       let result
@@ -77,44 +86,53 @@ export default class WebSocketController {
           break
         }
 
-        case 'invite':
-          result = await CommandsService.invite(channelId, user.id, args[0])
-          break
-
-        case 'revoke':
-          result = await CommandsService.revoke(channelId, user.id, args[0])
-          break
-
-        case 'kick':
-          result = await CommandsService.kick(channelId, user.id, args[0])
-          break
-
-        case 'list': {
-          const channelId = socket.data.channelId
-
-          if (!channelId) {
-            return response.badRequest({
-              message: "You are not inside any channel"
-            })
+        case 'invite': {
+          const id = ensureChannelId()
+          const nickname = args[0]
+          if (!nickname) {
+            return response.badRequest({ message: 'Usage: /invite nickname' })
           }
-
-          result = await CommandsService.list(channelId, user.id)
-
-          //getIo()
-          //  .to(socket.id)
-          //  .emit('open_members_page', { members: result.members })
-
+          result = await CommandsService.invite(id, user.id, nickname)
           break
         }
 
-
-        case 'quit':
-          result = await CommandsService.quit(channelId, user.id)
+        case 'revoke': {
+          const id = ensureChannelId()
+          const nickname = args[0]
+          if (!nickname) {
+            return response.badRequest({ message: 'Usage: /revoke nickname' })
+          }
+          result = await CommandsService.revoke(id, user.id, nickname)
           break
+        }
 
-        case 'cancel':
-          result = await CommandsService.cancel(channelId, user.id)
+        case 'kick': {
+          const id = ensureChannelId()
+          const nickname = args[0]
+          if (!nickname) {
+            return response.badRequest({ message: 'Usage: /kick nickname' })
+          }
+          result = await CommandsService.kick(id, user.id, nickname)
           break
+        }
+
+        case 'list': {
+          const id = ensureChannelId()
+          result = await CommandsService.list(id, user.id)
+          break
+        }
+
+        case 'quit': {
+          const id = ensureChannelId()
+          result = await CommandsService.quit(id, user.id)
+          break
+        }
+
+        case 'cancel': {
+          const id = ensureChannelId()
+          result = await CommandsService.cancel(id, user.id)
+          break
+        }
 
         default:
           return response.badRequest({
@@ -125,7 +143,7 @@ export default class WebSocketController {
 
       return response.ok(result)
     } catch (error: any) {
-      return response.forbidden({ message: error.message })
+      return response.forbidden({ message: error.message || 'Command failed' })
     }
   }
 }
