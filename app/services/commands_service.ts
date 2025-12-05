@@ -221,15 +221,32 @@ export default class CommandsService {
     const user = await db.from('users').where('nick_name', nickname).first()
     if (!user) throw new Error('User not found')
 
+    // don't allow revoking owner (self or another owner)
+    if (user.id === channel.ownerId) {
+      throw new Error('Cannot revoke the channel owner')
+    }
+
     await db
       .from('user_channel_mapper')
       .where('user_id', user.id)
       .where('channel_id', channelId)
       .delete()
 
-    getIo().to(`channel:${channelId}`).emit('system', {
+    const io = getIo()
+
+    // notify channel members
+    io.to(`channel:${channelId}`).emit('system', {
       type: 'revoke',
       nickname,
+    })
+
+    // notify revoked user directly (so vie si odstrániť kanál)
+    io.to(`user:${user.id}`).emit('system', {
+      type: 'channel_revoked',
+      channelId,
+      name: channel.name,
+      private: channel.private,
+      reason: 'revoked',
     })
 
     return { message: `User ${nickname} revoked` }
