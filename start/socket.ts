@@ -80,6 +80,41 @@ export function startSocket() {
       }
     })
 
+    // SOCKET COMMAND: /quit (owner deletes channel)
+    socket.on('command:quit', async (payload: any, ack?: (response: any) => void) => {
+      const reply = ensureAck(ack)
+
+      try {
+        const channelId = Number(payload?.channelId)
+        if (!channelId || Number.isNaN(channelId)) {
+          reply({
+            ok: false,
+            command: 'quit',
+            error: 'ChannelId is required for /quit',
+          })
+          return
+        }
+
+        const result = await CommandsService.quit(channelId, socket.data.userId)
+
+        // leave the room locally
+        socket.leave(`channel:${channelId}`)
+
+        reply({
+          ok: true,
+          command: 'quit',
+          result,
+        })
+      } catch (error: any) {
+        console.error('Socket command:quit failed', error)
+        reply({
+          ok: false,
+          command: 'quit',
+          error: error?.message || 'Command failed',
+        })
+      }
+    })
+
     // LEGACY COMMAND WRAPPER (will be replaced command-by-command)
     socket.on('command', async (msg: CommandMessage, ack?: (response: any) => void) => {
       const safeAck = typeof ack === 'function' ? ack : () => {}
@@ -96,6 +131,10 @@ export function startSocket() {
         switch (normalizedCommand) {
           case 'join': {
             socket.emit('command:join', payload, (joinResponse: any) => safeAck(joinResponse))
+            return
+          }
+          case 'quit': {
+            socket.emit('command:quit', payload, (quitResponse: any) => safeAck(quitResponse))
             return
           }
           default: {
