@@ -39,6 +39,11 @@ new Ignitor(APP_ROOT, { importer: IMPORTER })
   })
   .httpServer()
   .start()
+  .then(async () => {
+    // start Socket.IO only after HTTP server exists
+    const { startSocket } = await import('#start/socket')
+    startSocket()
+  })
   .catch((error) => {
     process.exitCode = 1
     prettyPrintError(error)
