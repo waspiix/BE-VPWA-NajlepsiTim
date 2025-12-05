@@ -117,14 +117,25 @@ export default class WebSocketController {
         }
 
         case 'list': {
-          const id = ensureChannelId()
-          result = await CommandsService.list(id, user.id)
-          break
+          if (!channelId) {
+            return response.badRequest({
+              message: 'You are not inside any channel'
+            })
+          }
+
+          result = await CommandsService.list(channelId, user.id)
+          
+          // Vráť members ako súčasť result
+          // Frontend môže presmerovať na /channels/:id/members
+          return response.ok({
+            ...result,
+            action: 'redirect',
+            redirectTo: `/channels/${channelId}/members`
+          })
         }
 
-        case 'quit': {
-          const id = ensureChannelId()
-          result = await CommandsService.quit(id, user.id)
+        case 'quit':
+          result = await CommandsService.quit(channelId, user.id)
           break
         }
 
