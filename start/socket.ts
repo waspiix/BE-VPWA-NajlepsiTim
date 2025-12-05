@@ -152,6 +152,40 @@ export function startSocket() {
       }
     })
 
+    // SOCKET COMMAND: /kick channelId nickname
+    socket.on('command:kick', async (payload: any, ack?: (response: any) => void) => {
+      const reply = ensureAck(ack)
+
+      try {
+        const channelId = Number(payload?.channelId)
+        const nickname = (payload?.nickname || '').toString().trim()
+
+        if (!channelId || Number.isNaN(channelId) || !nickname) {
+          reply({
+            ok: false,
+            command: 'kick',
+            error: 'Usage: /kick nickname (requires channelId)',
+          })
+          return
+        }
+
+        const result = await CommandsService.kick(channelId, socket.data.userId, nickname)
+
+        reply({
+          ok: true,
+          command: 'kick',
+          result,
+        })
+      } catch (error: any) {
+        console.error('Socket command:kick failed', error)
+        reply({
+          ok: false,
+          command: 'kick',
+          error: error?.message || 'Command failed',
+        })
+      }
+    })
+
     // SOCKET COMMAND: /quit (owner deletes channel)
     socket.on('command:quit', async (payload: any, ack?: (response: any) => void) => {
       const reply = ensureAck(ack)
@@ -211,6 +245,10 @@ export function startSocket() {
           }
           case 'revoke': {
             socket.emit('command:revoke', payload, (revokeResponse: any) => safeAck(revokeResponse))
+            return
+          }
+          case 'kick': {
+            socket.emit('command:kick', payload, (kickResponse: any) => safeAck(kickResponse))
             return
           }
           case 'quit': {

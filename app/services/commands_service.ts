@@ -311,6 +311,15 @@ export default class CommandsService {
       type: 'kick',
       nickname,
     })
+    // notify kicked user directly (popup + redirect on frontend)
+    io.to(`user:${user.id}`).emit('system', {
+      type: 'channel_kicked',
+      channelId,
+      name: channel.name,
+      private: channel.private,
+      reason: 'kick',
+      currentKickCount: membership.kick_count + (channel.private ? 3 : 1),
+    })
 
     return {
       message: `User ${nickname} kicked successfully`,
