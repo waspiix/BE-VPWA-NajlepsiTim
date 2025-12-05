@@ -186,6 +186,39 @@ export function startSocket() {
       }
     })
 
+    // SOCKET COMMAND: /cancel (leave channel)
+    socket.on('command:cancel', async (payload: any, ack?: (response: any) => void) => {
+      const reply = ensureAck(ack)
+
+      try {
+        const channelId = Number(payload?.channelId)
+        if (!channelId || Number.isNaN(channelId)) {
+          reply({
+            ok: false,
+            command: 'cancel',
+            error: 'ChannelId is required for /cancel',
+          })
+          return
+        }
+
+        const result = await CommandsService.cancel(channelId, socket.data.userId)
+        socket.leave(`channel:${channelId}`)
+
+        reply({
+          ok: true,
+          command: 'cancel',
+          result,
+        })
+      } catch (error: any) {
+        console.error('Socket command:cancel failed', error)
+        reply({
+          ok: false,
+          command: 'cancel',
+          error: error?.message || 'Command failed',
+        })
+      }
+    })
+
     // SOCKET COMMAND: /quit (owner deletes channel)
     socket.on('command:quit', async (payload: any, ack?: (response: any) => void) => {
       const reply = ensureAck(ack)
@@ -249,6 +282,10 @@ export function startSocket() {
           }
           case 'kick': {
             socket.emit('command:kick', payload, (kickResponse: any) => safeAck(kickResponse))
+            return
+          }
+          case 'cancel': {
+            socket.emit('command:cancel', payload, (cancelResponse: any) => safeAck(cancelResponse))
             return
           }
           case 'quit': {
