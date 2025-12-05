@@ -328,7 +328,7 @@ export default class CommandsService {
   }
 
 
-  static async list(channelId: number, userId: number) {
+    static async list(channelId: number, userId: number) {
     // Check membership
     const membership = await db
       .from('user_channel_mapper')
@@ -346,12 +346,21 @@ export default class CommandsService {
       .select(
         'users.id',
         'users.nick_name',   // ⬅️ vraciame nick_name
+        'users.state',
         'user_channel_mapper.owner',
         'user_channel_mapper.kick_count'
       )
       .where('channel_id', channelId)
 
-    return { members }
+    const mapped = members.map((row: any) => ({
+      id: row.id,
+      nick_name: row.nick_name,
+      owner: row.owner,
+      kick_count: row.kick_count,
+      status: row.state === 2 ? 'dnd' : row.state === 3 ? 'offline' : 'online',
+    }))
+
+    return { members: mapped }
   }
 
 

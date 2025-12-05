@@ -83,7 +83,8 @@ export default class WebSocketService {
       )
 
     // 5) realtime broadcast – globálne (všetkým socketom)
-    io.emit('message', fullMessage)
+    io.emit('new_message', fullMessage)
+    io.emit('message', fullMessage) // backward compatibility
     // (ak by si neskôr robil rooms, môžeš nechať aj:)
     // io.to(channelName).emit('message', fullMessage)
 

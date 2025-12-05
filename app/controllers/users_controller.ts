@@ -2,6 +2,8 @@ import type { HttpContext } from '@adonisjs/core/http'
 import User from '#models/user'
 import Hash from '@adonisjs/core/services/hash'
 import { registerUserValidator } from '#validators/register_user_validator'
+import PresenceService, { normalizeStatus, stateToStatus } from '#services/presence_service'
+import { getIo } from '#start/socket'
 
 export default class UsersController {
   // Registracia
@@ -155,6 +157,13 @@ export default class UsersController {
           message: 'Invalid state. Must be 1 (online), 2 (DND), or 3 (offline)',
         })
       }
+      const normalized = stateToStatus(state)
+      await PresenceService.setStatus(user.id, normalized)
+      const io = getIo()
+      io.emit('user_status_changed', { userId: user.id, status: normalized })
+      if (normalized === 'offline') {
+        await io.in(`user:${user.id}`).disconnectSockets(true)
+      }
       user.state = state
     }
 
@@ -178,6 +187,43 @@ export default class UsersController {
       email: user.email,
       state: user.state,
       notificationMode: user.notificationMode,
+    })
+  }
+
+  public async updateStatus({ auth, request, response }: HttpContext) {
+    const user = await auth.getUserOrFail()
+    const status = normalizeStatus(request.input('status'))
+
+    if (!status) {
+      return response.badRequest({
+        message: 'Invalid status. Must be online, dnd or offline',
+      })
+    }
+
+    await PresenceService.setStatus(user.id, status)
+    const io = getIo()
+    io.emit('user_status_changed', { userId: user.id, status })
+    if (status === 'offline') {
+      await io.in(`user:${user.id}`).disconnectSockets(true)
+    }
+
+    return response.ok({
+      status,
+      state: status === 'online' ? 1 : status === 'dnd' ? 2 : 3,
+    })
+  }
+
+  public async updateNotificationPrefs({ auth, request, response }: HttpContext) {
+    const user = await auth.getUserOrFail()
+    const { notifyMentionsOnly } = request.only(['notifyMentionsOnly'])
+
+    const mode = notifyMentionsOnly ? 'mentions_only' : 'all'
+    user.notificationMode = mode
+    await user.save()
+
+    return response.ok({
+      notificationMode: mode,
+      userId: user.id,
     })
   }
 

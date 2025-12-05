@@ -130,31 +130,48 @@ export default class ChannelsController {
     return response.ok(channels)
   }
 
-public async listMembers({ params, response }: HttpContext) {
-  const channelId = params.id
+  public async listMembers({ auth, params, response }: HttpContext) {
+    const channelId = params.id
+    const user = await auth.getUserOrFail()
 
-  // Skontrolujeme či kanál existuje
-  const channel = await Channel.find(channelId)
-  if (!channel) {
-    return response.status(404).json({ message: 'Channel not found' })
+    const channel = await Channel.find(channelId)
+    if (!channel) {
+      return response.status(404).json({ message: 'Channel not found' })
+    }
+
+    const membership = await db
+      .from('user_channel_mapper')
+      .where('channel_id', channelId)
+      .where('user_id', user.id)
+      .first()
+
+    if (!membership) {
+      return response.status(403).json({ message: 'You are not a member of this channel' })
+    }
+
+    const rows = await db
+      .from('user_channel_mapper')
+      .join('users', 'users.id', 'user_channel_mapper.user_id')
+      .where('user_channel_mapper.channel_id', channelId)
+      .select(
+        'users.id',
+        'users.nick_name as nickName',
+        'users.state',
+        'user_channel_mapper.owner as isOwner',
+        'user_channel_mapper.joined_at as joinedAt'
+      )
+      .orderBy('users.nick_name', 'asc')
+
+    const members = rows.map((row: any) => ({
+      id: row.id,
+      nickName: row.nickName,
+      isOwner: !!row.isOwner,
+      joinedAt: row.joinedAt,
+      status: row.state === 2 ? 'dnd' : row.state === 3 ? 'offline' : 'online',
+    }))
+
+    return response.ok({ channelId: Number(channelId), members })
   }
-
-  // JOIN users + user_channel_mapper
-  const members = await db
-    .from('user_channel_mapper')
-    .join('users', 'users.id', 'user_channel_mapper.user_id')
-    .where('user_channel_mapper.channel_id', channelId)
-    .select(
-      'users.id',
-      'users.nick_name as nickName',
-      'user_channel_mapper.owner as isOwner',
-      'user_channel_mapper.ban as isBanned',
-      'user_channel_mapper.joined_at as joinedAt'
-    )
-    .orderBy('users.nick_name', 'asc')
-
-  return response.ok({ members })
-}
 
   // GET /api/channels/public - Verejne kanaly
   public async public({ response }: HttpContext) {

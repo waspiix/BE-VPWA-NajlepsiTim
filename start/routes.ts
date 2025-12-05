@@ -11,6 +11,7 @@ import router from '@adonisjs/core/services/router'
 import UsersController from '#controllers/users_controller'
 import ChannelsController from '#controllers/channels_controller'
 import MessagesController from '#controllers/messages_controller'
+import SyncController from '#controllers/sync_controller'
 import { middleware } from '#start/kernel'
 
 // AUTH ROUTES - PUBLIC (bez auth middleware)
@@ -37,6 +38,8 @@ router
   .group(() => {
     router.get('/users', [UsersController, 'index']) // Zoznam userov
     router.put('/users/me/settings', [UsersController, 'updateSettings']) // Update settings usera (MUSI BYT PRED :id)
+    router.patch('/users/me/status', [UsersController, 'updateStatus'])
+    router.patch('/users/me/notification-prefs', [UsersController, 'updateNotificationPrefs'])
     router.get('/users/:id', [UsersController, 'show']) // Detail usera
     router.put('/users/:id', [UsersController, 'update']) // Update usera
     router.delete('/users/:id', [UsersController, 'destroy']) // Zmazat usera
@@ -49,10 +52,18 @@ router
   .group(() => {
     router.get('/my-channels', [ChannelsController, 'myChannels']) // Moje kanaly
     router.get('/channels/public', [ChannelsController, 'public']) // Verejne kanaly
+    router.get('/channels/:id/members', [ChannelsController, 'listMembers']) // members for /list
     router.get('/channels/:id', [ChannelsController, 'show']) // Detail kanala
     router.post('/join', [ChannelsController, 'store']) // Vytvorit/joinnut kanal
     router.post('/quit', [ChannelsController, 'delete']) // Zrusit kanal (owner)
     router.post('/leave', [ChannelsController, 'leave']) // Opustit kanal
+  })
+  .prefix('/api')
+  .middleware([middleware.auth()])
+
+router
+  .group(() => {
+    router.get('/sync', [SyncController, 'sync'])
   })
   .prefix('/api')
   .middleware([middleware.auth()])

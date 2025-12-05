@@ -3,13 +3,31 @@ import { Server as SocketIOServer, Socket } from 'socket.io'
 import server from '@adonisjs/core/services/server'
 import CommandsService from '#services/commands_service'
 import db from '@adonisjs/lucid/services/db'
+import PresenceService, { normalizeStatus, type PresenceStatus } from '#services/presence_service'
 
 let io: SocketIOServer | null = null
+const userConnectionCount: Map<number, number> = new Map()
+const forcedOfflineUsers: Set<number> = new Set()
 
 interface CommandMessage {
   type: 'command'
   command: string
   payload?: any
+}
+
+async function broadcastStatus(userId: number, status: PresenceStatus, persist: boolean = true) {
+  if (persist) {
+    await PresenceService.setStatus(userId, status)
+  }
+  getIo().emit('user_status_changed', { userId, status })
+}
+
+async function disconnectUserSockets(userId: number) {
+  try {
+    await getIo().in(`user:${userId}`).disconnectSockets(true)
+  } catch (e) {
+    console.warn('disconnectSockets failed', e)
+  }
 }
 
 export function startSocket() {
@@ -24,8 +42,7 @@ export function startSocket() {
     },
   })
 
-  io.on('connection', (socket: Socket) => {
-    // userId from handshake (client sends in auth/query)
+  io.on('connection', async (socket: Socket) => {
     const userIdRaw = (socket.handshake.auth as any)?.userId ?? socket.handshake.query.userId
     const userId = Number(userIdRaw)
 
@@ -43,11 +60,43 @@ export function startSocket() {
 
     const ensureAck = (ack?: (response: any) => void) => (typeof ack === 'function' ? ack : () => {})
 
-    // join personal room for targeted events (invites, notifications)
     socket.join(`user:${userId}`)
-    console.log(`✅ Socket ${socket.id} joined user room: user:${userId}`)
+    console.log(`Socket ${socket.id} joined user room: user:${userId}`)
 
-    // SOCKET COMMAND: /join channelName [private]
+    const prevCount = userConnectionCount.get(userId) || 0
+    userConnectionCount.set(userId, prevCount + 1)
+    if (prevCount === 0) {
+      const storedStatus = await PresenceService.getStatus(userId)
+      await broadcastStatus(userId, storedStatus, false)
+    }
+
+    socket.on('status:update', async (payload: any, ack?: (resp: any) => void) => {
+      const reply = ensureAck(ack)
+      try {
+        const status = normalizeStatus(payload?.status)
+        if (!status) {
+          reply({ ok: false, error: 'Invalid status' })
+          return
+        }
+
+        if (status === 'offline') {
+          forcedOfflineUsers.add(userId)
+          await broadcastStatus(userId, 'offline')
+          await disconnectUserSockets(userId)
+          if (!userConnectionCount.has(userId)) {
+            forcedOfflineUsers.delete(userId)
+          }
+          reply({ ok: true })
+          return
+        }
+
+        await broadcastStatus(userId, status as PresenceStatus)
+        reply({ ok: true })
+      } catch (e: any) {
+        reply({ ok: false, error: e?.message || 'Status update failed' })
+      }
+    })
+
     socket.on('command:join', async (payload: any, ack?: (response: any) => void) => {
       const reply = ensureAck(ack)
 
@@ -85,7 +134,6 @@ export function startSocket() {
       }
     })
 
-    // SOCKET COMMAND: /invite channelId nickname
     socket.on('command:invite', async (payload: any, ack?: (response: any) => void) => {
       const reply = ensureAck(ack)
 
@@ -119,7 +167,6 @@ export function startSocket() {
       }
     })
 
-    // SOCKET COMMAND: /revoke channelId nickname
     socket.on('command:revoke', async (payload: any, ack?: (response: any) => void) => {
       const reply = ensureAck(ack)
 
@@ -153,7 +200,6 @@ export function startSocket() {
       }
     })
 
-    // SOCKET COMMAND: /kick channelId nickname
     socket.on('command:kick', async (payload: any, ack?: (response: any) => void) => {
       const reply = ensureAck(ack)
 
@@ -187,7 +233,6 @@ export function startSocket() {
       }
     })
 
-    // SOCKET COMMAND: /cancel (leave channel)
     socket.on('command:cancel', async (payload: any, ack?: (response: any) => void) => {
       const reply = ensureAck(ack)
 
@@ -220,7 +265,6 @@ export function startSocket() {
       }
     })
 
-    // TYPING indicator
     socket.on('typing:update', async (payload: any) => {
       try {
         const channelId = Number(payload?.channelId)
@@ -240,7 +284,6 @@ export function startSocket() {
       }
     })
 
-    // LIVE DRAFT preview
     socket.on('draft:update', async (payload: any) => {
       try {
         const channelId = Number(payload?.channelId)
@@ -260,7 +303,6 @@ export function startSocket() {
       }
     })
 
-    // SOCKET COMMAND: /quit (owner deletes channel)
     socket.on('command:quit', async (payload: any, ack?: (response: any) => void) => {
       const reply = ensureAck(ack)
 
@@ -277,7 +319,6 @@ export function startSocket() {
 
         const result = await CommandsService.quit(channelId, socket.data.userId)
 
-        // leave the room locally
         socket.leave(`channel:${channelId}`)
 
         reply({
@@ -295,7 +336,6 @@ export function startSocket() {
       }
     })
 
-    // LEGACY COMMAND WRAPPER (will be replaced command-by-command)
     socket.on('command', async (msg: CommandMessage, ack?: (response: any) => void) => {
       const safeAck = typeof ack === 'function' ? ack : () => {}
 
@@ -352,8 +392,26 @@ export function startSocket() {
       }
     })
 
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', async (reason) => {
       console.log(`Socket disconnected: ${socket.id}`, reason)
+      if (!userConnectionCount.has(userId)) {
+        forcedOfflineUsers.delete(userId)
+        return
+      }
+
+      const prev = userConnectionCount.get(userId) || 0
+      const next = Math.max(0, prev - 1)
+      if (next === 0) {
+        userConnectionCount.delete(userId)
+        if (forcedOfflineUsers.has(userId)) {
+          forcedOfflineUsers.delete(userId)
+          await PresenceService.setStatus(userId, 'offline')
+        } else {
+          await broadcastStatus(userId, 'offline')
+        }
+      } else {
+        userConnectionCount.set(userId, next)
+      }
     })
   })
 
