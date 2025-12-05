@@ -149,6 +149,8 @@ export default class CommandsService {
     const user = await db.from('users').where('nick_name', nickname).first()
     if (!user) throw new Error('User not found')
 
+    const owner = await db.from('users').where('id', ownerId).first()
+
     // Skontroluj existujúce členstvo
     const membership = await db
       .from('user_channel_mapper')
@@ -194,21 +196,14 @@ export default class CommandsService {
 
     const io = getIo()
 
-    // 🔔 Notifikácia pre ľudí v kanáli (vizuálna, info)
-    io.to(`channel:${channelId}`).emit('system', {
-      type: 'invite',
-      nickname,
-    })
-
-    // 🔥 REAKTIVITA: povedz invited userovi, že "joinol" kanál
-    // Toto spracuje case 'channel_joined' v socket boot a pridá kanál do sidebaru
-    io.emit('system', {
-      type: 'channel_joined',
-      userId: user.id,
+    // Pozvánka len pre konkrétneho používateľa – zobrazí sa v paneli
+    io.to(`user:${user.id}`).emit('system', {
+      type: 'channel_invited',
       channelId: channelId,
       name: channel.name,
       private: channel.private,
-      isOwner: false,
+      inviterId: ownerId,
+      inviterNickName: owner?.nick_name,
     })
 
     return { message: `User ${nickname} invited` }

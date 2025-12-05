@@ -1,4 +1,4 @@
-import type { HttpContext } from '@adonisjs/core/http'
+﻿import type { HttpContext } from '@adonisjs/core/http'
 import WebSocketService from '#services/websocket_service'
 import CommandsService from '#services/commands_service'
 
@@ -58,7 +58,6 @@ export default class WebSocketController {
 
     const { command, args } = parsed
 
-    // helper: príkazy, ktoré potrebujú validný channelId
     const ensureChannelId = () => {
       const id = Number(channelId)
       if (!id || Number.isNaN(id)) {
@@ -117,25 +116,19 @@ export default class WebSocketController {
         }
 
         case 'list': {
-          if (!channelId) {
-            return response.badRequest({
-              message: 'You are not inside any channel'
-            })
-          }
+          const id = ensureChannelId()
+          result = await CommandsService.list(id, user.id)
 
-          result = await CommandsService.list(channelId, user.id)
-          
-          // Vráť members ako súčasť result
-          // Frontend môže presmerovať na /channels/:id/members
           return response.ok({
             ...result,
             action: 'redirect',
-            redirectTo: `/channels/${channelId}/members`
+            redirectTo: `/channels/${id}/members`,
           })
         }
 
-        case 'quit':
-          result = await CommandsService.quit(channelId, user.id)
+        case 'quit': {
+          const id = ensureChannelId()
+          result = await CommandsService.quit(id, user.id)
           break
         }
 

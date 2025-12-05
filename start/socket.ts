@@ -42,6 +42,10 @@ export function startSocket() {
 
     const ensureAck = (ack?: (response: any) => void) => (typeof ack === 'function' ? ack : () => {})
 
+    // join personal room for targeted events (invites, notifications)
+    socket.join(`user:${userId}`)
+    console.log(`✅ Socket ${socket.id} joined user room: user:${userId}`)
+
     // SOCKET COMMAND: /join channelName [private]
     socket.on('command:join', async (payload: any, ack?: (response: any) => void) => {
       const reply = ensureAck(ack)
@@ -75,6 +79,40 @@ export function startSocket() {
         reply({
           ok: false,
           command: 'join',
+          error: error?.message || 'Command failed',
+        })
+      }
+    })
+
+    // SOCKET COMMAND: /invite channelId nickname
+    socket.on('command:invite', async (payload: any, ack?: (response: any) => void) => {
+      const reply = ensureAck(ack)
+
+      try {
+        const channelId = Number(payload?.channelId)
+        const nickname = (payload?.nickname || '').toString().trim()
+
+        if (!channelId || Number.isNaN(channelId) || !nickname) {
+          reply({
+            ok: false,
+            command: 'invite',
+            error: 'Usage: /invite nickname (requires channelId)',
+          })
+          return
+        }
+
+        const result = await CommandsService.invite(channelId, socket.data.userId, nickname)
+
+        reply({
+          ok: true,
+          command: 'invite',
+          result,
+        })
+      } catch (error: any) {
+        console.error('Socket command:invite failed', error)
+        reply({
+          ok: false,
+          command: 'invite',
           error: error?.message || 'Command failed',
         })
       }
@@ -131,6 +169,10 @@ export function startSocket() {
         switch (normalizedCommand) {
           case 'join': {
             socket.emit('command:join', payload, (joinResponse: any) => safeAck(joinResponse))
+            return
+          }
+          case 'invite': {
+            socket.emit('command:invite', payload, (inviteResponse: any) => safeAck(inviteResponse))
             return
           }
           case 'quit': {
