@@ -2,6 +2,7 @@
 import { Server as SocketIOServer, Socket } from 'socket.io'
 import server from '@adonisjs/core/services/server'
 import CommandsService from '#services/commands_service'
+import db from '@adonisjs/lucid/services/db'
 
 let io: SocketIOServer | null = null
 
@@ -216,6 +217,46 @@ export function startSocket() {
           command: 'cancel',
           error: error?.message || 'Command failed',
         })
+      }
+    })
+
+    // TYPING indicator
+    socket.on('typing:update', async (payload: any) => {
+      try {
+        const channelId = Number(payload?.channelId)
+        const isTyping = !!payload?.isTyping
+        if (!channelId || Number.isNaN(channelId)) return
+
+        const user = await db.from('users').where('id', socket.data.userId).select('nick_name').first()
+
+        getIo().emit('typing', {
+          channelId,
+          userId: socket.data.userId,
+          nickName: user?.nick_name,
+          isTyping,
+        })
+      } catch (e) {
+        console.warn('typing:update failed', e)
+      }
+    })
+
+    // LIVE DRAFT preview
+    socket.on('draft:update', async (payload: any) => {
+      try {
+        const channelId = Number(payload?.channelId)
+        if (!channelId || Number.isNaN(channelId)) return
+
+        const text = (payload?.text || '').toString()
+        const user = await db.from('users').where('id', socket.data.userId).select('nick_name').first()
+
+        getIo().emit('draft_preview', {
+          channelId,
+          userId: socket.data.userId,
+          nickName: user?.nick_name,
+          text,
+        })
+      } catch (e) {
+        console.warn('draft:update failed', e)
       }
     })
 
