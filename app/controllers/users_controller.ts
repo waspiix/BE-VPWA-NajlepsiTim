@@ -6,28 +6,28 @@ import PresenceService, { normalizeStatus, stateToStatus } from '#services/prese
 import { getIo } from '#start/socket'
 
 export default class UsersController {
-  // Registracia
+  // register user
   public async register({ request, response }: HttpContext) {
     try {
-      // Validácia vstupu cez Vine validator
+      // validate input
       const payload = await registerUserValidator.validate(request.body())
 
-      // Kontrola unikatnosti emailu
+      // check unique email
       const emailExists = await User.findBy('email', payload.email)
       if (emailExists) {
         return response.status(400).json({ message: 'Email already in use' })
       }
 
-      // Kontrola unikatnosti nickName
+      // check unique nickname
       const nickExists = await User.findBy('nickName', payload.nickName)
       if (nickExists) {
         return response.status(400).json({ message: 'Nickname already in use' })
       }
 
-      // Zahashovanie hesla
+      // hash password
       const hashedPassword = await Hash.make(payload.password)
 
-      // Vytvorenie usera
+      // create user
       const user = await User.create({
         name: payload.firstName,
         surname: payload.lastName,
@@ -36,7 +36,7 @@ export default class UsersController {
         password: hashedPassword,
       })
 
-      // Automaticke prihlasenie po registracii
+      // issue token after register
       const token = await User.accessTokens.create(user)
 
       return response.status(201).json({
@@ -54,7 +54,7 @@ export default class UsersController {
         expiresAt: token.expiresAt,
       })
     } catch (error: any) {
-      // Chyby z Vine validatora – zoberieme prvú hlášku
+      // return first validator error if present
       if (error && Array.isArray(error.messages) && error.messages.length > 0) {
         return response.status(400).json({ message: error.messages[0].message })
       }
@@ -64,7 +64,7 @@ export default class UsersController {
     }
   }
 
-  // Login
+  // login
   public async login({ request, response }: HttpContext) {
     const { email, password } = request.only(['email', 'password'])
 
@@ -74,7 +74,7 @@ export default class UsersController {
       return response.status(401).json({ message: 'Invalid credentials' })
     }
 
-    // Vygenerovanie tokenu
+    // create access token
     const token = await User.accessTokens.create(user)
 
     return response.json({
@@ -84,7 +84,7 @@ export default class UsersController {
     })
   }
 
-  // Logout
+  // logout
   public async logout({ auth, response }: HttpContext) {
     const user = auth.user!
     const token = user.currentAccessToken!
@@ -94,13 +94,13 @@ export default class UsersController {
     return response.json({ message: 'Logged out' })
   }
 
-  // Zoznam vsetkych userov
+  // list users
   public async index({ response }: HttpContext) {
     const users = await User.all()
     return response.json(users)
   }
 
-  // Detail usera
+  // user detail
   public async show({ params, response }: HttpContext) {
     const user = await User.find(params.id)
     if (!user) {
@@ -118,7 +118,7 @@ export default class UsersController {
     })
   }
 
-  // Update usera
+  // update user
   public async update({ params, request, response }: HttpContext) {
     const user = await User.find(params.id)
     if (!user) {
@@ -145,13 +145,13 @@ export default class UsersController {
     })
   }
 
-  // Update settings usera
+  // update own settings
   public async updateSettings({ auth, request, response }: HttpContext) {
     const user = await auth.getUserOrFail()
     const { state, notificationMode } = request.only(['state', 'notificationMode'])
 
     if (state !== undefined) {
-      // Validacia: state musi byt 1, 2, alebo 3
+      // validate state value
       if (![1, 2, 3].includes(state)) {
         return response.status(400).json({
           message: 'Invalid state. Must be 1 (online), 2 (DND), or 3 (offline)',
@@ -168,7 +168,7 @@ export default class UsersController {
     }
 
     if (notificationMode !== undefined) {
-      // Validacia: notificationMode musi byt 'all' alebo 'mentions_only'
+      // validate notification mode
       if (!['all', 'mentions_only'].includes(notificationMode)) {
         return response.status(400).json({
           message: 'Invalid notificationMode. Must be "all" or "mentions_only"',
@@ -227,7 +227,7 @@ export default class UsersController {
     })
   }
 
-  // Delete usera
+  // delete user
   public async destroy({ params, response }: HttpContext) {
     const user = await User.find(params.id)
     if (!user) {

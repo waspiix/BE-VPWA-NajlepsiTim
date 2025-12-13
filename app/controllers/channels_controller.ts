@@ -3,22 +3,22 @@ import Channel from '#models/channel'
 import db from '@adonisjs/lucid/services/db'
 
 export default class ChannelsController {
-  // POST /api/join - Vytvorit/joinnut kanal
+  // create or join a channel
   public async store({ auth, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
     const { name, private: isPrivate } = request.only(['name', 'private'])
 
-    // Validacia
+    // basic validation
     if (!name) {
       return response.status(400).json({ message: 'Channel name is required' })
     }
 
-    // Skontroluj, ci kanal uz existuje
+    // check if channel already exists
     let channel = await Channel.findBy('name', name)
 
-    // Ak kanal neexistuje, vytvor ho
+    // create channel if missing
     if (!channel) {
-      // Pre private kanal musi byt explicitne zadane private: true
+      // private channel needs explicit private: true
       if (isPrivate === true) {
         channel = await Channel.create({
           name: name,
@@ -26,7 +26,7 @@ export default class ChannelsController {
           ownerId: user.id,
         })
       } else {
-        // Public kanal
+        // public channel
         channel = await Channel.create({
           name: name,
           private: false,
@@ -34,7 +34,7 @@ export default class ChannelsController {
         })
       }
 
-      // Pridaj ownera ako clena s owner = true
+      // add owner membership
       await db.table('user_channel_mapper').insert({
         user_id: user.id,
         channel_id: channel.id,
@@ -55,15 +55,15 @@ export default class ChannelsController {
       })
     }
 
-    // Kanal existuje - skus sa joinnut
-    // Ak je private, nemoze sa joinnut bez invite
+    // channel exists
+    // private requires invite
     if (channel.private) {
       return response.status(403).json({
         message: 'Cannot join private channel without invite',
       })
     }
 
-    // Skontroluj, ci uz je clen
+    // check membership
     const existing = await db
       .from('user_channel_mapper')
       .where('channel_id', channel.id)
@@ -76,8 +76,7 @@ export default class ChannelsController {
       })
     }
 
-    // Skontroluj ban (kick_count >= 3)
-    // Pri novom jointe je kick_count 0, takze skontrolujeme ci nebol banned predtym
+    // check ban history
     const previousMembership = await db
       .from('user_channel_mapper')
       .where('channel_id', channel.id)
@@ -91,7 +90,7 @@ export default class ChannelsController {
       })
     }
 
-    // Pridaj ako clena
+    // add as member
     await db.table('user_channel_mapper').insert({
       user_id: user.id,
       channel_id: channel.id,
@@ -108,7 +107,7 @@ export default class ChannelsController {
     })
   }
 
-  // GET /api/my-channels - Moje kanaly
+  // list my channels
   public async myChannels({ auth, response }: HttpContext) {
     const user = auth.getUserOrFail()
 
@@ -116,7 +115,7 @@ export default class ChannelsController {
       .from('channels')
       .join('user_channel_mapper', 'channels.id', 'user_channel_mapper.channel_id')
       .where('user_channel_mapper.user_id', user.id)
-      .where('user_channel_mapper.kick_count', '<', 3) // <-- filter banned
+      .where('user_channel_mapper.kick_count', '<', 3) // filter banned members
       .select(
         'channels.id',
         'channels.name',
@@ -173,7 +172,7 @@ export default class ChannelsController {
     return response.ok({ channelId: Number(channelId), members })
   }
 
-  // GET /api/channels/public - Verejne kanaly
+  // list public channels
   public async public({ response }: HttpContext) {
     const channels = await Channel.query()
       .where('private', false)
@@ -183,12 +182,12 @@ export default class ChannelsController {
     return response.ok(channels)
   }
 
-  // GET /api/channels/:id - Detail kanala
+  // channel detail
   public async show({ auth, params, response }: HttpContext) {
     const user = auth.getUserOrFail()
     const channelId = params.id
 
-    // Skontroluj clenstvo
+    // check membership
     const membership = await db
       .from('user_channel_mapper')
       .where('channel_id', channelId)
@@ -210,7 +209,7 @@ export default class ChannelsController {
     })
   }
 
-  // POST /api/leave - Opustit kanal
+  // leave channel
   public async leave({ auth, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
     const { channelId } = request.only(['channelId'])
@@ -225,13 +224,13 @@ export default class ChannelsController {
       return response.status(404).json({ message: 'You are not a member of this channel' })
     }
 
-    // Ak je owner, kanal zanikne
+    // owner leaving deletes channel
     if (membership.owner) {
       await Channel.query().where('id', channelId).delete()
       return response.ok({ message: 'Channel deleted (you were owner)' })
     }
 
-    // Inak len odstran clenstvo
+    // regular member leaves
     await db
       .from('user_channel_mapper')
       .where('channel_id', channelId)
@@ -241,7 +240,7 @@ export default class ChannelsController {
     return response.ok({ message: 'Left channel successfully' })
   }
 
-  // POST /api/quit - Zrusit kanal (owner)
+  // delete channel as owner
   public async delete({ auth, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
     const { channelId } = request.only(['channelId'])

@@ -5,14 +5,14 @@ import db from '@adonisjs/lucid/services/db'
 import { sendMessageValidator } from '#validators/send_message_validator'
 
 export default class MessagesController {
-  // GET /api/channels/:channelId/messages
+  // list channel messages
   async index({ auth, params, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
     const channelId = params.channelId
     const page = request.input('page', 1)
     const limit = request.input('limit', 50)
 
-    // control membership
+    // ensure membership
     const membership = await db
       .from('user_channel_mapper')
       .where('channel_id', channelId)
@@ -23,7 +23,7 @@ export default class MessagesController {
       return response.forbidden({ message: 'You are not a member of this channel' })
     }
 
-    // Získaj správy s autorom a mentioned userom
+    // fetch messages with author info
     const messages = await db
       .from('messages')
       .where('channel_id', channelId)
@@ -42,7 +42,7 @@ export default class MessagesController {
       .offset((page - 1) * limit)
       .limit(limit)
 
-    // reverse, bcs of chat
+    // reverse for chat order
     const reversedMessages = messages.reverse()
 
     return response.ok({

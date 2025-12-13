@@ -23,7 +23,7 @@ export default class WebSocketService {
   }
 
   static async sendMessage(channelId: number, userId: number, content: string) {
-    // 1) over, že user je člen kanála
+    // make sure user is a channel member
     const membership = await db
       .from('user_channel_mapper')
       .where({ user_id: userId, channel_id: channelId })
@@ -36,7 +36,7 @@ export default class WebSocketService {
     const io = getIo()
     const channelName = `channel:${channelId}`
 
-    // 2) nájdi prípadný @mention
+    // find optional mention
     let mentionedUserId: number | null = null
     const mentionMatch = content.match(/@(\w+)/)
     if (mentionMatch) {
@@ -52,7 +52,7 @@ export default class WebSocketService {
       }
     }
 
-    // 3) zapíš správu do DB
+    // store message
     const [inserted] = await db
       .table('messages')
       .insert({
@@ -65,7 +65,7 @@ export default class WebSocketService {
       })
       .returning(['id'])
 
-    // 4) načítaj ju s nickmi ako v MessagesController.index
+    // load message with nicknames
     const [fullMessage] = await db
       .from('messages')
       .where('messages.id', inserted.id)
@@ -82,10 +82,10 @@ export default class WebSocketService {
         'messages.channel_id as channelId'
       )
 
-    // 5) realtime broadcast – globálne (všetkým socketom)
+    // broadcast to all sockets
     io.emit('new_message', fullMessage)
     io.emit('message', fullMessage) // backward compatibility
-    // (ak by si neskôr robil rooms, môžeš nechať aj:)
+    // if rooms are used later, you can also target channel room:
     // io.to(channelName).emit('message', fullMessage)
 
     return fullMessage
@@ -108,3 +108,4 @@ export default class WebSocketService {
     })
   }
 }
+

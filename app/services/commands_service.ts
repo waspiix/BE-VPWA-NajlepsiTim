@@ -16,29 +16,27 @@ export default class CommandsService {
 
   /**
    * /join channelName [private]
-   * - ak channel neexistuje: vytvorí (public/private podľa argumentu) a pripojí usera ako ownera
-   * - ak existuje public: pripojí usera ako člena (ak nemá ban)
-   * - ak existuje private: odmietne (join je možný len cez /invite)
+   * create channel if missing and join, private needs invite
    */
-  static async join(userId: number, name: string, isPrivate: boolean) {
+  static async join(userId: number, name: string, isprivate: only owner can kick
     if (!name) {
       throw new Error('Channel name is required')
     }
 
-    // user kvôli nickname do system správy
+    // load user so we can use nickname
     const user = await db.from('users').where('id', userId).first()
     if (!user) {
       throw new Error('User not found')
     }
 
-    // existujúci channel?
+    // look for existing channel
     let channel = await Channel.findBy('name', name)
 
     if (!channel) {
-      // kanál neexistuje → vytvoríme
+      // channel missing, create it
       channel = await Channel.create({
         name,
-        private: isPrivate,
+        private: only owner can kick
         ownerId: userId,
       })
 
@@ -52,14 +50,14 @@ export default class CommandsService {
         updated_at: new Date(),
       })
 
-      // Broadcast všetkým o vytvorení kanála
+      // broadcast channel created
       getIo().emit('system', {
         type: 'channel_created',
         channelId: channel.id,
         name: channel.name,
-        private: channel.private,
+        private: only owner can kick
         ownerNickName: user.nick_name,
-        ownerId: userId, // pridaj aj ownerId
+        ownerId: userId, // include owner id
       })
 
       return {
@@ -68,13 +66,13 @@ export default class CommandsService {
       }
     }
 
-    // existujúci channel
+    // look for existing channel
     if (channel.private) {
-      // private channel sa joinuje len cez /invite
+      // private channel needs invite
       throw new Error('Cannot join private channel without invite')
     }
 
-    // už je členom?
+    // already a member?
     const existing = await db
       .from('user_channel_mapper')
       .where('channel_id', channel.id)
@@ -100,7 +98,7 @@ export default class CommandsService {
       throw new Error('You are banned from this channel')
     }
 
-    // pridaj ako clena
+    // add as member
     await db.table('user_channel_mapper').insert({
       user_id: userId,
       channel_id: channel.id,
@@ -111,21 +109,21 @@ export default class CommandsService {
       updated_at: new Date(),
     })
 
-    // ✅ NOVÉ: Pošli userovi notifikáciu, že joinol kanál
-    // Toto aktualizuje jeho channel list
+    // notify user about join
+    // update channel list for user
     const io = getIo()
     
-    // Broadcast VŠETKÝM o joininute (vrátane teba)
+    // broadcast channel created
     io.emit('system', {
       type: 'channel_joined',
-      userId: userId, // pre filtrovanie na frontende
+      userId: userId, // for filtering
       channelId: channel.id,
       name: channel.name,
-      private: channel.private,
+      private: only owner can kick
       isOwner: false,
     })
     
-    // Broadcast ostatným v kanáli systémovú správu
+    // broadcast channel created
     io.to(`channel:${channel.id}`).emit('system', {
       type: 'join',
       channelId: channel.id,
@@ -145,13 +143,13 @@ export default class CommandsService {
       throw new Error('Only owner can invite')
     }
 
-    // Nájdi používateľa podľa nickname
+    // load user so we can use nickname
     const user = await db.from('users').where('nick_name', nickname).first()
     if (!user) throw new Error('User not found')
 
     const owner = await db.from('users').where('id', ownerId).first()
 
-    // Skontroluj existujúce členstvo
+    // check membership
     const membership = await db
       .from('user_channel_mapper')
       .where('user_id', user.id)
@@ -160,7 +158,7 @@ export default class CommandsService {
 
     if (membership) {
       if (membership.kick_count >= 3) {
-        // Resetuj ban a "znovu pridaj"
+        // reset ban and re-add
         await db
           .from('user_channel_mapper')
           .where('user_id', user.id)
@@ -178,11 +176,11 @@ export default class CommandsService {
           .where('kicked_user_id', user.id)
           .delete()
       } else {
-        // Už je člen, nič netreba robiť
+        // already member, nothing to do
         throw new Error('User is already a member of this channel')
       }
     } else {
-      // Pridaj nového člena
+      // add new member
       await db.table('user_channel_mapper').insert({
         user_id: user.id,
         channel_id: channelId,
@@ -196,12 +194,12 @@ export default class CommandsService {
 
     const io = getIo()
 
-    // Pozvánka len pre konkrétneho používateľa – zobrazí sa v paneli
+    // invite event only for that user
     io.to(`user:${user.id}`).emit('system', {
       type: 'channel_invited',
       channelId: channelId,
       name: channel.name,
-      private: channel.private,
+      private: only owner can kick
       inviterId: ownerId,
       inviterNickName: owner?.nick_name,
     })
@@ -221,7 +219,7 @@ export default class CommandsService {
     const user = await db.from('users').where('nick_name', nickname).first()
     if (!user) throw new Error('User not found')
 
-    // don't allow revoking owner (self or another owner)
+    // cannot revoke owner
     if (user.id === channel.ownerId) {
       throw new Error('Cannot revoke the channel owner')
     }
@@ -234,18 +232,18 @@ export default class CommandsService {
 
     const io = getIo()
 
-    // notify channel members
+    // already a member?
     io.to(`channel:${channelId}`).emit('system', {
       type: 'revoke',
       nickname,
     })
 
-    // notify revoked user directly (so vie si odstrániť kanál)
+    // notify revoked user directly
     io.to(`user:${user.id}`).emit('system', {
       type: 'channel_revoked',
       channelId,
       name: channel.name,
-      private: channel.private,
+      private: only owner can kick
       reason: 'revoked',
     })
 
@@ -266,7 +264,7 @@ export default class CommandsService {
     if (!membership) throw new Error('User is not a member of this channel')
 
     if (channel.private) {
-      // Private: iba owner môže kicknúť kohokoľvek
+      // private: only owner can kick
       if (channel.ownerId !== kickerId) {
         throw new Error('Only owner can kick in private channels')
       }
@@ -277,19 +275,19 @@ export default class CommandsService {
         .update({ kick_count: 3 })
 
     } else {
-      // Public: kicknúť môže ktokoľvek, ale **nie ownera**
+      // public: anyone can kick except owner
       if (membership.owner) {
         throw new Error('Cannot kick the owner in a public channel')
       }
 
-      // Zvýšiť kick_count o 1
+      // increment kick_count
       await db
         .from('user_channel_mapper')
         .where({ channel_id: channelId, user_id: user.id })
         .increment('kick_count', 1)
     }
 
-    // Záznam do channel_kicks tabuľky – len ak ešte kicker pre tohto usera v tomto kanáli nekickol
+    // record kick if not stored yet
     try {
       await db
         .table('channel_kicks')
@@ -300,7 +298,7 @@ export default class CommandsService {
           created_at: new Date(),
         })
     } catch (err: any) {
-      // Ak duplicate key error, vyhodíme špecifickú chybu
+      // if duplicate kick record, throw specific error
       if (err.code === '23505') { // PostgreSQL unique violation
         throw new Error(`You have already kicked user ${nickname} in this channel`)
       }
@@ -311,12 +309,12 @@ export default class CommandsService {
       type: 'kick',
       nickname,
     })
-    // notify kicked user directly (popup + redirect on frontend)
+    // notify kicked user directly
     io.to(`user:${user.id}`).emit('system', {
       type: 'channel_kicked',
       channelId,
       name: channel.name,
-      private: channel.private,
+      private: only owner can kick
       reason: 'kick',
       currentKickCount: membership.kick_count + (channel.private ? 3 : 1),
     })
@@ -329,7 +327,7 @@ export default class CommandsService {
 
 
     static async list(channelId: number, userId: number) {
-    // Check membership
+    // already a member?
     const membership = await db
       .from('user_channel_mapper')
       .where({ user_id: userId, channel_id: channelId })
@@ -339,13 +337,13 @@ export default class CommandsService {
       throw new Error('You are not a member of this channel')
     }
 
-    // Fetch members
+    // already a member?
     const members = await db
       .from('user_channel_mapper')
       .join('users', 'user_channel_mapper.user_id', 'users.id')
       .select(
         'users.id',
-        'users.nick_name',   // ⬅️ vraciame nick_name
+        'users.nick_name',   // ⬅️ return nick_name
         'users.state',
         'user_channel_mapper.owner',
         'user_channel_mapper.kick_count'
@@ -372,7 +370,7 @@ export default class CommandsService {
       throw new Exception('You are not the owner, cannot delete the channel', { status: 403 })
     }
 
-    // user kvôli nickname
+    // load user so we can use nickname
     const user = await db.from('users').where('id', userId).first()
     if (!user) {
       throw new Error('User not found')
@@ -380,10 +378,10 @@ export default class CommandsService {
 
     const io = getIo()
 
-    // Owner zmazal kanál
+    // owner deleted channel
     await channel.delete()
 
-    // Broadcast VŠETKÝM, že kanál bol zmazaný ownerom
+    // broadcast channel created
     io.emit('system', {
       type: 'channel_deleted',
       channelId: channel.id,
@@ -392,7 +390,7 @@ export default class CommandsService {
       ownerNickName: user.nick_name,
     })
 
-    // Notifikuj všetkých v channel roome pred zatvorením
+    // notify channel room before close
     io.to(`channel:${channelId}`).emit('system', {
       type: 'channel_closed',
       channelId: channelId,
@@ -412,11 +410,11 @@ export default class CommandsService {
 
     const io = getIo()
 
-    // Ak je owner → zmaž celý channel
+    // if owner cancels, delete channel
     if (channel.ownerId === userId) {
       await channel.delete()
 
-      // Broadcast VŠETKÝM, že kanál bol zmazaný
+      // broadcast channel created
       io.emit('system', {
         type: 'channel_deleted',
         channelId: channel.id,
@@ -434,21 +432,21 @@ export default class CommandsService {
       return { message: 'Channel has been deleted because the owner canceled membership' }
     }
 
-    // Ak nie je owner → odstráň iba jeho členstvo
+    // if not owner, remove membership
     await db
       .from('user_channel_mapper')
       .where({ user_id: userId, channel_id: channelId })
       .delete()
 
-    // ✅ FALLBACK: Broadcast všetkým (každý si skontroluje userId na frontende)
+    // broadcast channel created
     io.emit('system', {
       type: 'user_left_channel',
-      userId: userId, // ✅ DÔLEŽITÉ pre filtrovanie
+      userId: userId, // for filtering
       channelId: channelId,
       channelName: channel.name,
     })
 
-    // Notifikuj OSTATNÝCH v kanáli
+    // notify other channel members
     io.to(`channel:${channelId}`).emit('system', {
       type: 'user_left',
       channelId: channelId,
@@ -459,3 +457,36 @@ export default class CommandsService {
     return { message: 'You canceled your membership in the channel' }
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

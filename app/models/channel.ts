@@ -22,7 +22,7 @@ export default class Channel extends BaseModel {
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
 
-  // Relacie
+  // relations
   @belongsTo(() => User, {
     foreignKey: 'ownerId'
   })

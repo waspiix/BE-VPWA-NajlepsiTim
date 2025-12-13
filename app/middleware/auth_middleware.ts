@@ -3,12 +3,11 @@ import type { NextFn } from '@adonisjs/core/types/http'
 import type { Authenticators } from '@adonisjs/auth/types'
 
 /**
- * Auth middleware is used authenticate HTTP requests and deny
- * access to unauthenticated users.
+ * auth middleware that blocks unauthenticated requests
  */
 export default class AuthMiddleware {
   /**
-   * The URL to redirect to, when authentication fails
+   * redirect target when auth fails
    */
   redirectTo = '/login'
 
@@ -28,13 +27,13 @@ export default class AuthMiddleware {
     )
 
     try {
-      // If specific guards are provided, try them in order
+      // try provided guards in order
       if (options.guards && options.guards.length > 0) {
-        // try each guard until one authenticates successfully
+        // stop once one guard authenticates
         let authenticated = false
         for (const g of options.guards) {
           try {
-            // auth.use expects the guard name as string
+            // auth.use expects guard name string
             await auth.use(g as any).authenticate()
             authenticated = true
             break
@@ -43,11 +42,11 @@ export default class AuthMiddleware {
           }
         }
 
-        if (!authenticated) {
-          throw new Error('Unauthenticated')
-        }
-      } else {
-        // default: authenticate using default guard
+      if (!authenticated) {
+        throw new Error('Unauthenticated')
+      }
+    } else {
+        // fallback to default guard
         await auth.authenticate()
       }
 
