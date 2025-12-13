@@ -18,7 +18,7 @@ export default class CommandsService {
    * /join channelName [private]
    * create channel if missing and join, private needs invite
    */
-  static async join(userId: number, name: string, isprivate: only owner can kick
+  static async join(userId: number, name: string, isPrivate: boolean) {
     if (!name) {
       throw new Error('Channel name is required')
     }
@@ -29,6 +29,8 @@ export default class CommandsService {
       throw new Error('User not found')
     }
 
+    const io = getIo()
+
     // look for existing channel
     let channel = await Channel.findBy('name', name)
 
@@ -36,7 +38,7 @@ export default class CommandsService {
       // channel missing, create it
       channel = await Channel.create({
         name,
-        private: only owner can kick
+        private: isPrivate,
         ownerId: userId,
       })
 
@@ -51,11 +53,11 @@ export default class CommandsService {
       })
 
       // broadcast channel created
-      getIo().emit('system', {
+      io.emit('system', {
         type: 'channel_created',
         channelId: channel.id,
         name: channel.name,
-        private: only owner can kick
+        private: channel.private,
         ownerNickName: user.nick_name,
         ownerId: userId, // include owner id
       })
@@ -111,18 +113,16 @@ export default class CommandsService {
 
     // notify user about join
     // update channel list for user
-    const io = getIo()
-    
     // broadcast channel created
     io.emit('system', {
       type: 'channel_joined',
       userId: userId, // for filtering
       channelId: channel.id,
       name: channel.name,
-      private: only owner can kick
+      private: channel.private,
       isOwner: false,
     })
-    
+
     // broadcast channel created
     io.to(`channel:${channel.id}`).emit('system', {
       type: 'join',
@@ -199,7 +199,7 @@ export default class CommandsService {
       type: 'channel_invited',
       channelId: channelId,
       name: channel.name,
-      private: only owner can kick
+      private: channel.private,
       inviterId: ownerId,
       inviterNickName: owner?.nick_name,
     })
@@ -243,7 +243,7 @@ export default class CommandsService {
       type: 'channel_revoked',
       channelId,
       name: channel.name,
-      private: only owner can kick
+      private: channel.private,
       reason: 'revoked',
     })
 
@@ -263,8 +263,10 @@ export default class CommandsService {
 
     if (!membership) throw new Error('User is not a member of this channel')
 
+    const io = getIo()
+
     if (channel.private) {
-      // private: only owner can kick
+      // private channel: only owner can kick
       if (channel.ownerId !== kickerId) {
         throw new Error('Only owner can kick in private channels')
       }
@@ -305,7 +307,7 @@ export default class CommandsService {
       throw err
     }
 
-    getIo().to(`channel:${channelId}`).emit('system', {
+    io.to(`channel:${channelId}`).emit('system', {
       type: 'kick',
       nickname,
     })
@@ -314,7 +316,7 @@ export default class CommandsService {
       type: 'channel_kicked',
       channelId,
       name: channel.name,
-      private: only owner can kick
+      private: channel.private,
       reason: 'kick',
       currentKickCount: membership.kick_count + (channel.private ? 3 : 1),
     })
@@ -326,7 +328,7 @@ export default class CommandsService {
   }
 
 
-    static async list(channelId: number, userId: number) {
+  static async list(channelId: number, userId: number) {
     // already a member?
     const membership = await db
       .from('user_channel_mapper')
@@ -457,8 +459,6 @@ export default class CommandsService {
     return { message: 'You canceled your membership in the channel' }
   }
 }
-
-
 
 
 

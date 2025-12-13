@@ -89,6 +89,11 @@ export default class UsersController {
     const user = auth.user!
     const token = user.currentAccessToken!
 
+    await PresenceService.setStatus(user.id, 'offline')
+    const io = getIo()
+    io.emit('user_status_changed', { userId: user.id, status: 'offline' })
+    await io.in(`user:${user.id}`).disconnectSockets(true)
+
     await User.accessTokens.delete(user, token.identifier)
 
     return response.json({ message: 'Logged out' })
