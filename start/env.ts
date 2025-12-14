@@ -27,5 +27,8 @@ export default await Env.create(new URL('../', import.meta.url), {
   DB_PORT: Env.schema.number(),
   DB_USER: Env.schema.string(),
   DB_PASSWORD: Env.schema.string.optional(),
-  DB_DATABASE: Env.schema.string()
+  DB_DATABASE: Env.schema.string(),
+  
+  // Minutes of inactivity after which channels are auto-deleted; <=0 disables
+  CLEAN_INACTIVE_CHANNEL_MINUTES: Env.schema.number.optional(),
 })
