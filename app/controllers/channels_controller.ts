@@ -56,21 +56,17 @@ export default class ChannelsController {
     }
 
     // channel exists
-    // private requires invite
-    let hadInvite = false
-    if (channel.private) {
-      const invite = await db
-        .from('channel_invites')
-        .where('channel_id', channel.id)
-        .where('user_id', user.id)
-        .first()
+    // invite lookup (private requires invite, also used to lift bans)
+    const invite = await db
+      .from('channel_invites')
+      .where('channel_id', channel.id)
+      .where('user_id', user.id)
+      .first()
 
-      if (!invite) {
-        return response.status(403).json({
-          message: 'Cannot join private channel without invite',
-        })
-      }
-      hadInvite = true
+    if (channel.private && !invite) {
+      return response.status(403).json({
+        message: 'Cannot join private channel without invite',
+      })
     }
 
     // check membership
@@ -86,18 +82,36 @@ export default class ChannelsController {
       })
     }
 
-    // check ban history
-    const previousMembership = await db
-      .from('user_channel_mapper')
+    // check ban history via kicks
+    const kicks = await db
+      .from('channel_kicks')
       .where('channel_id', channel.id)
-      .where('user_id', user.id)
-      .whereNotNull('kick_count')
-      .first()
+      .where('kicked_user_id', user.id)
+      .select('owner')
 
-    if (previousMembership && previousMembership.kick_count >= 3) {
+    const kickCount = kicks.length
+    const bannedByOwner = kicks.some((k: any) => k.owner)
+    const invitedByOwner = invite && invite.inviter_id === channel.ownerId
+
+    if ((bannedByOwner || kickCount >= 3) && !invitedByOwner) {
       return response.status(403).json({
         message: 'You are banned from this channel',
       })
+    }
+
+    // clean up kicks + invite if this is an owner-approved re-invite
+    if (invite) {
+      await db
+        .from('channel_kicks')
+        .where('channel_id', channel.id)
+        .where('kicked_user_id', user.id)
+        .delete()
+
+      await db
+        .from('channel_invites')
+        .where('channel_id', channel.id)
+        .where('user_id', user.id)
+        .delete()
     }
 
     // add as member
@@ -110,14 +124,6 @@ export default class ChannelsController {
       created_at: new Date(),
       updated_at: new Date(),
     })
-
-    if (hadInvite) {
-      await db
-        .from('channel_invites')
-        .where('channel_id', channel.id)
-        .where('user_id', user.id)
-        .delete()
-    }
 
     return response.status(200).json({
       message: 'Joined channel',

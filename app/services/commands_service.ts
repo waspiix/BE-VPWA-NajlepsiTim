@@ -28,7 +28,7 @@ export default class CommandsService {
 
     let channel = await Channel.findBy('name', name)
 
-    // 1️⃣ CREATE CHANNEL
+    // 1: CREATE CHANNEL
     if (!channel) {
       channel = await Channel.create({
         name,
@@ -58,19 +58,17 @@ export default class CommandsService {
       return { message: 'Channel created', channelId: channel.id }
     }
 
-    // 2️⃣ PRIVATE → INVITE CHECK
-    if (channel.private) {
-      const invite = await db
-        .from('channel_invites')
-        .where({ channel_id: channel.id, user_id: userId })
-        .first()
+    // 2: INVITE CHECK (private requires invite, invite can also lift bans)
+    const invite = await db
+      .from('channel_invites')
+      .where({ channel_id: channel.id, user_id: userId })
+      .first()
 
-      if (!invite) {
-        throw new Error('Cannot join private channel without invite')
-      }
+    if (channel.private && !invite) {
+      throw new Error('Cannot join private channel without invite')
     }
 
-    // 3️⃣ BAN CHECK (JEDINÁ PRAVDA)
+    // 3: BAN CHECK (owner invite can override)
     const kicks = await db
       .from('channel_kicks')
       .where({
@@ -79,22 +77,15 @@ export default class CommandsService {
       })
       .select('owner')
 
-    let kickCount = 0
-    let bannedByOwner = false
+    const kickCount = kicks.length
+    const bannedByOwner = kicks.some((k) => k.owner)
+    const invitedByOwner = invite && invite.inviter_id === channel.ownerId
 
-    for (const k of kicks) {
-      if (k.owner) {
-        bannedByOwner = true
-        break
-      }
-      kickCount += 1
-    }
-
-    if (bannedByOwner || kickCount >= 3) {
+    if ((bannedByOwner || kickCount >= 3) && !invitedByOwner) {
       throw new Error('You are permanently banned from this channel')
     }
 
-    // 4️⃣ already member?
+    // 4: already member?
     const existing = await db
       .from('user_channel_mapper')
       .where({ channel_id: channel.id, user_id: userId })
@@ -107,7 +98,23 @@ export default class CommandsService {
       }
     }
 
-    // 5️⃣ JOIN
+    // 5: invited user gets a clean slate
+    if (invite) {
+      await db
+        .from('channel_kicks')
+        .where({
+          channel_id: channel.id,
+          kicked_user_id: userId,
+        })
+        .delete()
+
+      await db
+        .from('channel_invites')
+        .where({ channel_id: channel.id, user_id: userId })
+        .delete()
+    }
+
+    // 6: JOIN
     await db.table('user_channel_mapper').insert({
       user_id: userId,
       channel_id: channel.id,
@@ -160,14 +167,21 @@ export default class CommandsService {
       .where('channel_id', channelId)
       .first()
 
-    // banned users can be reinvited only by owner
-    if (membership?.kick_count >= 3 && inviterId !== channel.ownerId) {
-      throw new Error('Only owner can re-invite a banned user')
+    if (membership) {
+      throw new Error('User is already a member of this channel')
     }
 
-    // user already member and not banned
-    if (membership && membership.kick_count < 3) {
-      throw new Error('User is already a member of this channel')
+    // banned users can be reinvited only by owner (based on kick history)
+    const kickHistory = await db
+      .from('channel_kicks')
+      .where({ channel_id: channelId, kicked_user_id: user.id })
+      .select('owner')
+
+    const kickCount = kickHistory.length
+    const bannedByOwner = kickHistory.some((k) => k.owner)
+
+    if ((bannedByOwner || kickCount >= 3) && inviterId !== channel.ownerId) {
+      throw new Error('Only owner can re-invite a banned user')
     }
 
     // insert invite
@@ -446,8 +460,6 @@ export default class CommandsService {
     return { message: 'You canceled your membership in the channel' }
   }
 }
-
-
 
 
 
