@@ -68,9 +68,20 @@ export default class CommandsService {
       }
     }
 
+    let hadInvite = false
     // private channel → needs invite
     if (channel.private) {
-      throw new Error('Cannot join private channel without invite')
+      // private channel needs invite
+      const invite = await db
+        .from('channel_invites')
+        .where('channel_id', channel.id)
+        .where('user_id', userId)
+        .first()
+
+      if (!invite) {
+        throw new Error('Cannot join private channel without invite')
+      }
+      hadInvite = true
     }
 
     // already a member?
@@ -113,6 +124,22 @@ export default class CommandsService {
       created_at: new Date(),
       updated_at: new Date(),
     })
+
+    if (hadInvite) {
+      await db
+        .from('channel_invites')
+        .where('channel_id', channel.id)
+        .where('user_id', userId)
+        .delete()
+    }
+
+    if (hadInvite) {
+      await db
+        .from('channel_invites')
+        .where('channel_id', channel.id)
+        .where('user_id', userId)
+        .delete()
+    }
 
     // notify only the joining user about successful join
     io.to(`user:${userId}`).emit('system', {
@@ -159,41 +186,29 @@ export default class CommandsService {
 
     if (membership) {
       if (membership.kick_count >= 3) {
-        // reset ban and re-add
-        await db
-          .from('user_channel_mapper')
-          .where('user_id', user.id)
-          .where('channel_id', channelId)
-          .update({
-            kick_count: 0,
-            owner: false,
-            joined_at: new Date(),
-            updated_at: new Date(),
-          })
-
-        await db
-          .from('channel_kicks')
-          .where('channel_id', channelId)
-          .where('kicked_user_id', user.id)
-          .delete()
-      } else {
-        // already member, nothing to do
-        throw new Error('User is already a member of this channel')
+        throw new Error('User is banned from this channel')
       }
-    } else {
-      // add new member
-      await db.table('user_channel_mapper').insert({
-        user_id: user.id,
-        channel_id: channelId,
-        owner: false,
-        kick_count: 0,
-        joined_at: new Date(),
-        created_at: new Date(),
-        updated_at: new Date(),
-      })
+      throw new Error('User is already a member of this channel')
     }
 
     const io = getIo()
+
+    // create pending invite
+    try {
+      await db.table('channel_invites').insert({
+        channel_id: channelId,
+        user_id: user.id,
+        inviter_id: ownerId,
+        created_at: new Date(),
+        updated_at: new Date(),
+      })
+    } catch (err: any) {
+      if (err.code === '23505') {
+        // duplicate invite
+        throw new Error('User is already invited to this channel')
+      }
+      throw err
+    }
 
     // invite event only for that user
     io.to(`user:${user.id}`).emit('system', {
@@ -227,6 +242,13 @@ export default class CommandsService {
 
     await db
       .from('user_channel_mapper')
+      .where('user_id', user.id)
+      .where('channel_id', channelId)
+      .delete()
+
+    // also remove any pending invites
+    await db
+      .from('channel_invites')
       .where('user_id', user.id)
       .where('channel_id', channelId)
       .delete()
@@ -474,9 +496,6 @@ export default class CommandsService {
     return { message: 'You canceled your membership in the channel' }
   }
 }
-
-
-
 
 
 

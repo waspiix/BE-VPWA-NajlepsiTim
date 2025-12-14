@@ -57,10 +57,20 @@ export default class ChannelsController {
 
     // channel exists
     // private requires invite
+    let hadInvite = false
     if (channel.private) {
-      return response.status(403).json({
-        message: 'Cannot join private channel without invite',
-      })
+      const invite = await db
+        .from('channel_invites')
+        .where('channel_id', channel.id)
+        .where('user_id', user.id)
+        .first()
+
+      if (!invite) {
+        return response.status(403).json({
+          message: 'Cannot join private channel without invite',
+        })
+      }
+      hadInvite = true
     }
 
     // check membership
@@ -100,6 +110,14 @@ export default class ChannelsController {
       created_at: new Date(),
       updated_at: new Date(),
     })
+
+    if (hadInvite) {
+      await db
+        .from('channel_invites')
+        .where('channel_id', channel.id)
+        .where('user_id', user.id)
+        .delete()
+    }
 
     return response.status(200).json({
       message: 'Joined channel',
