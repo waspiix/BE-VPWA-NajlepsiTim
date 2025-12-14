@@ -441,6 +441,12 @@ export default class CommandsService {
       .where({ user_id: userId, channel_id: channelId })
       .delete()
 
+    // always remove any pending invite for this user so they can be re-invited later
+    await db
+      .from('channel_invites')
+      .where({ user_id: userId, channel_id: channelId })
+      .delete()
+
     // notify only the user who left so others don't remove the channel from their lists
     io.to(`user:${userId}`).emit('system', {
       type: 'user_left_channel',
@@ -460,7 +466,6 @@ export default class CommandsService {
     return { message: 'You canceled your membership in the channel' }
   }
 }
-
 
 
 
