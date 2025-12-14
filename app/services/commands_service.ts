@@ -19,23 +19,17 @@ export default class CommandsService {
    * create channel if missing and join, private needs invite
    */
   static async join(userId: number, name: string, isPrivate: boolean) {
-    if (!name) {
-      throw new Error('Channel name is required')
-    }
+    if (!name) throw new Error('Channel name is required')
 
-    // load user so we can use nickname
     const user = await db.from('users').where('id', userId).first()
-    if (!user) {
-      throw new Error('User not found')
-    }
+    if (!user) throw new Error('User not found')
 
     const io = getIo()
 
-    // look for existing channel
     let channel = await Channel.findBy('name', name)
 
+    // 1️⃣ CREATE CHANNEL
     if (!channel) {
-      // channel missing, create it
       channel = await Channel.create({
         name,
         private: isPrivate,
@@ -52,7 +46,6 @@ export default class CommandsService {
         updated_at: new Date(),
       })
 
-      // notify only the creator about the newly created channel
       io.to(`user:${userId}`).emit('system', {
         type: 'channel_created',
         channelId: channel.id,
@@ -62,59 +55,59 @@ export default class CommandsService {
         ownerId: userId,
       })
 
-      return {
-        message: `Channel ${name} created and joined`,
-        channelId: channel.id,
-      }
+      return { message: 'Channel created', channelId: channel.id }
     }
 
-    let hadInvite = false
-    // private channel → needs invite
+    // 2️⃣ PRIVATE → INVITE CHECK
     if (channel.private) {
-      // private channel needs invite
       const invite = await db
         .from('channel_invites')
-        .where('channel_id', channel.id)
-        .where('user_id', userId)
+        .where({ channel_id: channel.id, user_id: userId })
         .first()
 
       if (!invite) {
         throw new Error('Cannot join private channel without invite')
       }
-      hadInvite = true
     }
 
-    // already a member?
+    // 3️⃣ BAN CHECK (JEDINÁ PRAVDA)
+    const kicks = await db
+      .from('channel_kicks')
+      .where({
+        channel_id: channel.id,
+        kicked_user_id: userId,
+      })
+      .select('owner')
+
+    let kickCount = 0
+    let bannedByOwner = false
+
+    for (const k of kicks) {
+      if (k.owner) {
+        bannedByOwner = true
+        break
+      }
+      kickCount += 1
+    }
+
+    if (bannedByOwner || kickCount >= 3) {
+      throw new Error('You are permanently banned from this channel')
+    }
+
+    // 4️⃣ already member?
     const existing = await db
       .from('user_channel_mapper')
-      .where('channel_id', channel.id)
-      .where('user_id', userId)
+      .where({ channel_id: channel.id, user_id: userId })
       .first()
 
     if (existing) {
-      // check kick_count if already a member (rare)
-      if (existing.kick_count >= 3) {
-        throw new Error('You are banned from this channel')
-      }
       return {
-        message: 'Already a member of this channel',
+        message: 'Already a member',
         channelId: channel.id,
       }
     }
 
-    // ❗ BAN CHECK pred vložením do membership
-    const banned = await db
-      .from('user_channel_mapper')
-      .where('channel_id', channel.id)
-      .where('user_id', userId)
-      .where('kick_count', '>=', 3)
-      .first()
-
-    if (banned) {
-      throw new Error('You are banned from this channel')
-    }
-
-    // add as member
+    // 5️⃣ JOIN
     await db.table('user_channel_mapper').insert({
       user_id: userId,
       channel_id: channel.id,
@@ -125,33 +118,15 @@ export default class CommandsService {
       updated_at: new Date(),
     })
 
-    if (hadInvite) {
-      await db
-        .from('channel_invites')
-        .where('channel_id', channel.id)
-        .where('user_id', userId)
-        .delete()
-    }
-
-    if (hadInvite) {
-      await db
-        .from('channel_invites')
-        .where('channel_id', channel.id)
-        .where('user_id', userId)
-        .delete()
-    }
-
-    // notify only the joining user about successful join
     io.to(`user:${userId}`).emit('system', {
       type: 'channel_joined',
-      userId: userId,
+      userId,
       channelId: channel.id,
       name: channel.name,
       private: channel.private,
       isOwner: false,
     })
 
-    // broadcast join event in channel
     io.to(`channel:${channel.id}`).emit('system', {
       type: 'join',
       channelId: channel.id,
@@ -164,18 +139,19 @@ export default class CommandsService {
     }
   }
 
-  static async invite(channelId: number, ownerId: number, nickname: string) {
+
+  static async invite(channelId: number, inviterId: number, nickname: string) {
     const channel = await Channel.findOrFail(channelId)
 
-    if (channel.ownerId !== ownerId) {
-      throw new Error('Only owner can invite')
-    }
+    // load inviter
+    const inviter = await db.from('users').where('id', inviterId).first()
+    if (!inviter) throw new Error('Inviter not found')
 
-    // load user so we can use nickname
+    // load target user
     const user = await db.from('users').where('nick_name', nickname).first()
     if (!user) throw new Error('User not found')
 
-    const owner = await db.from('users').where('id', ownerId).first()
+    const io = getIo()
 
     // check membership
     const membership = await db
@@ -184,46 +160,45 @@ export default class CommandsService {
       .where('channel_id', channelId)
       .first()
 
-    if (membership) {
-      if (membership.kick_count >= 3) {
-        throw new Error('User is banned from this channel')
-      }
+    // banned users can be reinvited only by owner
+    if (membership?.kick_count >= 3 && inviterId !== channel.ownerId) {
+      throw new Error('Only owner can re-invite a banned user')
+    }
+
+    // user already member and not banned
+    if (membership && membership.kick_count < 3) {
       throw new Error('User is already a member of this channel')
     }
 
-    const io = getIo()
-
-    // create pending invite
+    // insert invite
     try {
       await db.table('channel_invites').insert({
         channel_id: channelId,
         user_id: user.id,
-        inviter_id: ownerId,
+        inviter_id: inviterId,
         created_at: new Date(),
         updated_at: new Date(),
       })
     } catch (err: any) {
-      if (err.code === '23505') {
-        // duplicate invite
-        throw new Error('User is already invited to this channel')
-      }
+      if (err.code === '23505') throw new Error('User is already invited')
       throw err
     }
 
-    // invite event only for that user
+    // emit invite to the user
     io.to(`user:${user.id}`).emit('system', {
       type: 'channel_invited',
       channelId: channelId,
       name: channel.name,
       private: channel.private,
-      inviterId: ownerId,
-      inviterNickName: owner?.nick_name,
+      inviterId,
+      inviterNickName: inviter?.nick_name,
     })
 
     return { message: `User ${nickname} invited` }
   }
 
 
+  
 
   static async revoke(channelId: number, ownerId: number, nickname: string) {
     const channel = await Channel.findOrFail(channelId)
@@ -286,81 +261,56 @@ export default class CommandsService {
 
     if (!membership) throw new Error('User is not a member of this channel')
 
-    // OWNER sa nesmie kicknúť
+    // owner sa kicknúť nesmie
     if (membership.owner) {
       throw new Error('Cannot kick channel owner')
     }
 
-    let newKickCount = membership.kick_count
-    const io = getIo()
-
-    // Private channel → len owner môže kicknúť
+    // private → len owner
     if (channel.private && channel.ownerId !== kickerId) {
       throw new Error('Only owner can kick in private channels')
     }
 
-    // Ak kicker je owner → okamžitý ban
-    if (channel.ownerId === kickerId) {
-      newKickCount = 3
-      console.log('Kicker is owner → set kick_count to 3')
-    } else {
-      // Public channel → +1 kick_count
-      newKickCount += 1
-      console.log('Kicker is not owner → increment kick_count by 1')
-    }
+    const kickedByOwner = channel.ownerId === kickerId
+    const io = getIo()
 
-    // Uložiť kick_count
+    // 1️⃣ audit log
+    await db.table('channel_kicks').insert({
+      channel_id: channelId,
+      kicked_user_id: user.id,
+      kicker_user_id: kickerId,
+      owner: kickedByOwner, // ⬅️ DÔLEŽITÉ
+      created_at: new Date(),
+    })
+
+    // 2️⃣ odstrániť membership VŽDY
     await db
       .from('user_channel_mapper')
       .where({ channel_id: channelId, user_id: user.id })
-      .update({
-        kick_count: newKickCount,
-        updated_at: new Date(),
-      })
+      .delete()
 
-    // Audit log (ignoruje duplicate errors)
-    try {
-      await db.table('channel_kicks').insert({
-        channel_id: channelId,
-        kicked_user_id: user.id,
-        kicker_user_id: kickerId,
-        created_at: new Date(),
-      })
-    } catch {}
+    // 3️⃣ vyhodiť zo socket roomu
+    io.in(`user:${user.id}`).socketsLeave(`channel:${channelId}`)
 
-    // Ak kick_count >= 3 → okamžite vyhodiť z membership a socket room
-    if (newKickCount >= 3) {
-      await db
-        .from('user_channel_mapper')
-        .where({ channel_id: channelId, user_id: user.id })
-        .delete()
+    // 4️⃣ notify user → FE odstráni channel zo zoznamu
+    io.to(`user:${user.id}`).emit('system', {
+      type: 'channel_kicked',
+      channelId,
+      name: channel.name,
+      byOwner: kickedByOwner,
+    })
 
-      // Vyhodiť zo socket roomu
-      io.in(`user:${user.id}`).socketsLeave(`channel:${channelId}`)
-
-      // Notify user → aby klient odstránil channel
-      io.to(`user:${user.id}`).emit('system', {
-        type: 'channel_kicked',
-        channelId,
-        name: channel.name,
-        reason: 'kick',
-        currentKickCount: newKickCount,
-      })
-    }
-
-    // Broadcast do kanála → všetci vidia, že user bol kicknutý
+    // 5️⃣ broadcast do kanála
     io.to(`channel:${channelId}`).emit('system', {
       type: 'kick',
       nickname,
-      kickCount: newKickCount,
+      byOwner: kickedByOwner,
     })
 
     return {
-      message:
-        newKickCount >= 3
-          ? `User ${nickname} has been removed from channel (kick count >= 3)`
-          : `User ${nickname} has been removed from channel (kick)`,
-      currentKickCount: newKickCount,
+      message: kickedByOwner
+        ? `User ${nickname} was banned by owner`
+        : `User ${nickname} was kicked`,
     }
   }
 

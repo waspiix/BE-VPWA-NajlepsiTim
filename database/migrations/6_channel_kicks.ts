@@ -10,6 +10,8 @@ export default class extends BaseSchema {
       table.integer('kicked_user_id').unsigned().notNullable()
       table.integer('kicker_user_id').unsigned().notNullable()
 
+      table.boolean('owner').notNullable().defaultTo(false)
+
       table.timestamp('created_at', { useTz: true })
 
       table.foreign('channel_id').references('id').inTable('channels').onDelete('CASCADE')
