@@ -52,14 +52,14 @@ export default class CommandsService {
         updated_at: new Date(),
       })
 
-      // broadcast channel created
-      io.emit('system', {
+      // notify only the creator about the newly created channel
+      io.to(`user:${userId}`).emit('system', {
         type: 'channel_created',
         channelId: channel.id,
         name: channel.name,
         private: channel.private,
         ownerNickName: user.nick_name,
-        ownerId: userId, // include owner id
+        ownerId: userId,
       })
 
       return {
@@ -68,9 +68,8 @@ export default class CommandsService {
       }
     }
 
-    // look for existing channel
+    // private channel → needs invite
     if (channel.private) {
-      // private channel needs invite
       throw new Error('Cannot join private channel without invite')
     }
 
@@ -82,21 +81,25 @@ export default class CommandsService {
       .first()
 
     if (existing) {
+      // check kick_count if already a member (rare)
+      if (existing.kick_count >= 3) {
+        throw new Error('You are banned from this channel')
+      }
       return {
         message: 'Already a member of this channel',
         channelId: channel.id,
       }
     }
 
-    // ban check (kick_count >= 3)
-    const previousMembership = await db
+    // ❗ BAN CHECK pred vložením do membership
+    const banned = await db
       .from('user_channel_mapper')
       .where('channel_id', channel.id)
       .where('user_id', userId)
-      .whereNotNull('kick_count')
+      .where('kick_count', '>=', 3)
       .first()
 
-    if (previousMembership && previousMembership.kick_count >= 3) {
+    if (banned) {
       throw new Error('You are banned from this channel')
     }
 
@@ -111,19 +114,17 @@ export default class CommandsService {
       updated_at: new Date(),
     })
 
-    // notify user about join
-    // update channel list for user
-    // broadcast channel created
-    io.emit('system', {
+    // notify only the joining user about successful join
+    io.to(`user:${userId}`).emit('system', {
       type: 'channel_joined',
-      userId: userId, // for filtering
+      userId: userId,
       channelId: channel.id,
       name: channel.name,
       private: channel.private,
       isOwner: false,
     })
 
-    // broadcast channel created
+    // broadcast join event in channel
     io.to(`channel:${channel.id}`).emit('system', {
       type: 'join',
       channelId: channel.id,
@@ -263,67 +264,81 @@ export default class CommandsService {
 
     if (!membership) throw new Error('User is not a member of this channel')
 
+    // OWNER sa nesmie kicknúť
+    if (membership.owner) {
+      throw new Error('Cannot kick channel owner')
+    }
+
+    let newKickCount = membership.kick_count
     const io = getIo()
 
-    if (channel.private) {
-      // private channel: only owner can kick
-      if (channel.ownerId !== kickerId) {
-        throw new Error('Only owner can kick in private channels')
-      }
+    // Private channel → len owner môže kicknúť
+    if (channel.private && channel.ownerId !== kickerId) {
+      throw new Error('Only owner can kick in private channels')
+    }
 
-      await db
-        .from('user_channel_mapper')
-        .where({ channel_id: channelId, user_id: user.id })
-        .update({ kick_count: 3 })
-
+    // Ak kicker je owner → okamžitý ban
+    if (channel.ownerId === kickerId) {
+      newKickCount = 3
+      console.log('Kicker is owner → set kick_count to 3')
     } else {
-      // public: anyone can kick except owner
-      if (membership.owner) {
-        throw new Error('Cannot kick the owner in a public channel')
-      }
+      // Public channel → +1 kick_count
+      newKickCount += 1
+      console.log('Kicker is not owner → increment kick_count by 1')
+    }
 
-      // increment kick_count
+    // Uložiť kick_count
+    await db
+      .from('user_channel_mapper')
+      .where({ channel_id: channelId, user_id: user.id })
+      .update({
+        kick_count: newKickCount,
+        updated_at: new Date(),
+      })
+
+    // Audit log (ignoruje duplicate errors)
+    try {
+      await db.table('channel_kicks').insert({
+        channel_id: channelId,
+        kicked_user_id: user.id,
+        kicker_user_id: kickerId,
+        created_at: new Date(),
+      })
+    } catch {}
+
+    // Ak kick_count >= 3 → okamžite vyhodiť z membership a socket room
+    if (newKickCount >= 3) {
       await db
         .from('user_channel_mapper')
         .where({ channel_id: channelId, user_id: user.id })
-        .increment('kick_count', 1)
+        .delete()
+
+      // Vyhodiť zo socket roomu
+      io.in(`user:${user.id}`).socketsLeave(`channel:${channelId}`)
+
+      // Notify user → aby klient odstránil channel
+      io.to(`user:${user.id}`).emit('system', {
+        type: 'channel_kicked',
+        channelId,
+        name: channel.name,
+        reason: 'kick',
+        currentKickCount: newKickCount,
+      })
     }
 
-    // record kick if not stored yet
-    try {
-      await db
-        .table('channel_kicks')
-        .insert({
-          channel_id: channelId,
-          kicked_user_id: user.id,
-          kicker_user_id: kickerId,
-          created_at: new Date(),
-        })
-    } catch (err: any) {
-      // if duplicate kick record, throw specific error
-      if (err.code === '23505') { // PostgreSQL unique violation
-        throw new Error(`You have already kicked user ${nickname} in this channel`)
-      }
-      throw err
-    }
-
+    // Broadcast do kanála → všetci vidia, že user bol kicknutý
     io.to(`channel:${channelId}`).emit('system', {
       type: 'kick',
       nickname,
-    })
-    // notify kicked user directly
-    io.to(`user:${user.id}`).emit('system', {
-      type: 'channel_kicked',
-      channelId,
-      name: channel.name,
-      private: channel.private,
-      reason: 'kick',
-      currentKickCount: membership.kick_count + (channel.private ? 3 : 1),
+      kickCount: newKickCount,
     })
 
     return {
-      message: `User ${nickname} kicked successfully`,
-      currentKickCount: membership.kick_count + (channel.private ? 3 : 1),
+      message:
+        newKickCount >= 3
+          ? `User ${nickname} has been removed from channel (kick count >= 3)`
+          : `User ${nickname} has been removed from channel (kick)`,
+      currentKickCount: newKickCount,
     }
   }
 
@@ -440,8 +455,8 @@ export default class CommandsService {
       .where({ user_id: userId, channel_id: channelId })
       .delete()
 
-    // broadcast channel created
-    io.emit('system', {
+    // notify only the user who left so others don't remove the channel from their lists
+    io.to(`user:${userId}`).emit('system', {
       type: 'user_left_channel',
       userId: userId, // for filtering
       channelId: channelId,
